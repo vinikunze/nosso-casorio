@@ -1,351 +1,1397 @@
-import { supabase } from './supabase.js';
+import * as db from './db.js';
+import { exportFinancePdf, exportGuestsPdf } from './export-pdf.js';
 
-let currentUser = null, userData = {}, vendors = [], guests = [], tasks = [], rosEvents = [], timerInterval = null;
-let editVendorIndex = -1;
-let editGuestIndex = -1; // Nova variável global de controle para convidados!
+// ==========================================================
+// Estado
+// ==========================================================
 
-// ==========================================
-// 1. INICIALIZAÇÃO E TEMPO REAL
-// ==========================================
-supabase.auth.getSession().then(({ data: { session } }) => {
-    if (session) { currentUser = session.user; carregarNuvem(); iniciarEscutaEmTempoReal(); }
-    else { window.location.href = 'index.html'; }
-});
+const state = {
+    wedding: null,
+    members: [],
+    vendors: [],
+    guests: [],
+    tasks: [],
+    runOfShow: [],
+    honeymoon: null,
+    editingVendorId: null,
+    editingVendorSchedule: null,
+    editingGuestId: null,
+    countdownTimer: null,
+    unsubscribe: null,
+    reloading: false,
+    reloadQueued: false
+};
 
-function iniciarEscutaEmTempoReal() {
-    supabase.channel('schema-db-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => carregarNuvem()).subscribe();
+const CATEGORY_LABELS = {
+    buffet: 'Buffet', venue: 'Espaço', photo: 'Foto e vídeo', music: 'Música',
+    decor: 'Decoração', attire: 'Traje e beleza', cake: 'Bolo e doces',
+    invites: 'Convites', transport: 'Transporte', church: 'Cerimônia', other: 'Outros'
+};
+
+const GUEST_STATUS = {
+    pending: { label: 'Pendente', badge: 'warning' },
+    confirmed: { label: 'Confirmado', badge: 'success' },
+    declined: { label: 'Não vai', badge: 'danger' }
+};
+
+const TASK_STATUS = {
+    pending: { label: 'Pendente', badge: 'warning' },
+    in_progress: { label: 'Em andamento', badge: 'info' },
+    done: { label: 'Concluído', badge: 'success' }
+};
+
+const ROS_ROLE = { bride: '👰 Noiva', groom: '🤵 Noivo', both: '💍 Os dois' };
+
+// Litros por pessoa marcada em cada bebida.
+const DRINK_RATIOS = { beer: 1.5, soda: 0.6, juice: 0.4, water: 0.5 };
+
+// ==========================================================
+// Utilidades
+// ==========================================================
+
+const $ = (id) => document.getElementById(id);
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]
+    ));
 }
 
-async function carregarNuvem() {
-    const { data } = await supabase.from('users').select('*').eq('id', currentUser.id).single();
-    if (data) {
-        userData = data; vendors = data.vendors || []; guests = data.guests || []; tasks = data.tasks || []; rosEvents = data.rosEvents || [];
-        const casal = `${data.nome || "Noivo"} & ${data.nomeConjuge || "Noiva"}`;
-        document.getElementById('sidebar-names-display').innerText = casal;
-        const inputNomes = document.getElementById('names-input');
-        if (inputNomes && document.activeElement !== inputNomes) inputNomes.value = casal;
-        if (data.bgImage) document.getElementById('dynamic-bg').style.backgroundImage = `url(${data.bgImage})`;
-        const inputData = document.getElementById('wedding-date-input');
-        if (data.dataCasamento) { if (inputData && document.activeElement !== inputData) inputData.value = data.dataCasamento; }
-        iniciarContagem(data.dataCasamento); renderTudo();
-    }
-}
-
-async function salvarNuvem() {
-    if (currentUser) await supabase.from('users').update({ vendors, guests, tasks, rosEvents }).eq('id', currentUser.id);
-}
-
-function renderTudo() { renderVendors(); renderGuests(); renderBebidas(); renderChecklist(); renderRos(); }
-
-document.querySelectorAll('.nav-btn[data-target]').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-        btn.classList.add('active'); document.getElementById(btn.dataset.target).classList.add('active');
+function money(value) {
+    return Number(value || 0).toLocaleString('pt-BR', {
+        style: 'currency', currency: 'BRL', minimumFractionDigits: 2
     });
-});
-
-document.getElementById('btn-logout')?.addEventListener('click', async () => { await supabase.auth.signOut(); window.location.href = 'index.html'; });
-
-// ==========================================
-// 3. CABEÇALHO E CRONÔMETRO
-// ==========================================
-const namesInput = document.getElementById('names-input');
-if (namesInput) {
-    namesInput.addEventListener('input', (e) => document.getElementById('sidebar-names-display').innerText = e.target.value);
-    namesInput.addEventListener('blur', async (e) => { const nomes = e.target.value.split('&').map(n => n.trim()); await supabase.from('users').update({ nome: nomes[0] || "Noivo", nomeConjuge: nomes[1] || "Noiva" }).eq('id', currentUser.id); });
 }
 
-const dateInput = document.getElementById('wedding-date-input');
-if (dateInput) { dateInput.addEventListener('change', async (e) => { const novaData = e.target.value; iniciarContagem(novaData); await supabase.from('users').update({ dataCasamento: novaData }).eq('id', currentUser.id); }); }
+function num(value) {
+    return Number(value || 0);
+}
 
-function iniciarContagem(dataString) {
-    clearInterval(timerInterval);
-    if (!dataString) {
-        document.getElementById('t-days').innerText = '00'; document.getElementById('t-hours').innerText = '00'; document.getElementById('t-minutes').innerText = '00'; document.getElementById('t-seconds').innerText = '00'; return;
-    }
-    const targetDate = new Date(dataString).getTime(); if (isNaN(targetDate)) return;
-    const atualizarRelogio = () => {
-        const diff = targetDate - new Date().getTime();
-        if (diff <= 0) { document.getElementById('t-days').innerText = '00'; document.getElementById('t-hours').innerText = '00'; document.getElementById('t-minutes').innerText = '00'; document.getElementById('t-seconds').innerText = '00'; clearInterval(timerInterval); return; }
-        document.getElementById('t-days').innerText = String(Math.floor(diff / (1000 * 60 * 60 * 24))).padStart(2, '0');
-        document.getElementById('t-hours').innerText = String(Math.floor((diff / (1000 * 60 * 60)) % 24)).padStart(2, '0');
-        document.getElementById('t-minutes').innerText = String(Math.floor((diff / 1000 / 60) % 60)).padStart(2, '0');
-        document.getElementById('t-seconds').innerText = String(Math.floor((diff / 1000) % 60)).padStart(2, '0');
+/** Datas do banco vêm como 'YYYY-MM-DD'; monta a data no fuso local, sem UTC. */
+function parseDate(isoDate) {
+    if (!isoDate) return null;
+    const [year, month, day] = String(isoDate).slice(0, 10).split('-').map(Number);
+    if (!year || !month || !day) return null;
+    return new Date(year, month - 1, day);
+}
+
+function formatDate(isoDate) {
+    const date = parseDate(isoDate);
+    return date ? date.toLocaleDateString('pt-BR') : '—';
+}
+
+function formatLongDate(isoDate) {
+    const date = parseDate(isoDate);
+    if (!date) return '';
+    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+function formatTime(value) {
+    return value ? String(value).slice(0, 5) : '';
+}
+
+function todayIso() {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${now.getFullYear()}-${month}-${day}`;
+}
+
+/** Soma meses sem estourar o fim do mês (31/01 + 1 mês = 28/02, não 03/03). */
+function addMonths(isoDate, months) {
+    const date = parseDate(isoDate);
+    if (!date) return null;
+
+    const targetDay = date.getDate();
+    const shifted = new Date(date.getFullYear(), date.getMonth() + months, 1);
+    const lastDay = new Date(shifted.getFullYear(), shifted.getMonth() + 1, 0).getDate();
+    shifted.setDate(Math.min(targetDay, lastDay));
+
+    const month = String(shifted.getMonth() + 1).padStart(2, '0');
+    const day = String(shifted.getDate()).padStart(2, '0');
+    return `${shifted.getFullYear()}-${month}-${day}`;
+}
+
+function isOverdue(payment) {
+    return !payment.is_paid && payment.due_date && payment.due_date < todayIso();
+}
+
+let toastTimer = null;
+function toast(message, kind = '') {
+    const element = $('toast');
+    element.textContent = message;
+    element.className = `toast show ${kind}`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { element.className = 'toast'; }, 3600);
+}
+
+function setSync(status) {
+    const element = $('sync-status');
+    if (!element) return;
+    const map = {
+        saving: ['Salvando...', 'saving'],
+        ok: ['Sincronizado', ''],
+        error: ['Erro ao salvar', 'error']
     };
-    timerInterval = setInterval(atualizarRelogio, 1000); atualizarRelogio();
+    const [text, cls] = map[status] ?? map.ok;
+    element.textContent = text;
+    element.className = `sync-status ${cls}`;
 }
 
-document.getElementById('photo-upload')?.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const label = document.getElementById('upload-label').querySelector('.text');
-    label.innerText = "⏳ Enviando...";
+/** Envolve uma escrita: mostra estado, recarrega e avisa em caso de erro. */
+async function mutate(action, successMessage) {
+    setSync('saving');
     try {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("upload_preset", "SEU_UPLOAD_PRESET_AQUI");
-        const res = await fetch(`https://api.cloudinary.com/v1_1/SEU_CLOUD_NAME_AQUI/image/upload`, { method: "POST", body: formData });
-        const data = await res.json();
-        await supabase.from('users').update({ bgImage: data.secure_url }).eq('id', currentUser.id);
-        document.getElementById('dynamic-bg').style.backgroundImage = `url(${data.secure_url})`;
-        label.innerText = "✅ Atualizado!";
-    } catch { label.innerText = "❌ Erro"; }
-    setTimeout(() => label.innerText = "ESCOLHER IMAGEM", 3000);
-});
+        await action();
+        await reload();
+        setSync('ok');
+        if (successMessage) toast(successMessage, 'success');
+        return true;
+    } catch (error) {
+        console.error(error);
+        setSync('error');
+        toast(error?.message || 'Não foi possível salvar.', 'error');
+        return false;
+    }
+}
 
-// ==========================================
-// 4. FORNECEDORES E FLUXO DE CAIXA
-// ==========================================
-const vForm = document.getElementById('vendor-form'); const btnCancelEdit = document.getElementById('btn-cancel-edit'); const btnSubmitVendor = document.getElementById('btn-submit-vendor');
+// ==========================================================
+// Inicialização
+// ==========================================================
 
-const renderCashflow = () => {
-    const container = document.getElementById('monthly-cashflow-container'); if (!container) return;
-    const monthsMap = {}; const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-    vendors.forEach((v, vIdx) => {
-        v.payments.forEach((p, pIdx) => {
-            if (!p.date) return; const parts = p.date.split('-'); if (parts.length < 2) return;
-            const year = parts[0], monthIdx = parseInt(parts[1]) - 1, key = `${year}-${parts[1]}`;
-            if (!monthsMap[key]) monthsMap[key] = { label: `${monthNames[monthIdx]} ${year}`, total: 0, paid: 0, pending: 0, items: [] };
-            const amt = parseFloat(p.amount || 0); monthsMap[key].total += amt;
-            if (p.isPaid) monthsMap[key].paid += amt; else monthsMap[key].pending += amt;
-            monthsMap[key].items.push({ vIdx, pIdx, vendorName: v.name, date: p.date, amount: amt, isPaid: p.isPaid, desc: p.desc });
+async function boot() {
+    const session = await db.getSession();
+    if (!session) {
+        window.location.replace('index.html');
+        return;
+    }
+
+    try {
+        state.wedding = await db.fetchWedding();
+    } catch (error) {
+        console.error(error);
+        toast('Não foi possível falar com o servidor.', 'error');
+    }
+
+    if (!state.wedding) {
+        showGate();
+        return;
+    }
+
+    await reload();
+
+    $('boot-screen').hidden = true;
+    $('app').hidden = false;
+
+    state.unsubscribe = db.subscribeToChanges(() => reload());
+    wireEvents();
+}
+
+/** Recarrega tudo; chamadas concorrentes viram uma só recarga extra. */
+async function reload() {
+    if (state.reloading) {
+        state.reloadQueued = true;
+        return;
+    }
+    state.reloading = true;
+
+    try {
+        state.wedding = (await db.fetchWedding()) ?? state.wedding;
+        if (!state.wedding) return;
+
+        const [vendors, guests, tasks, runOfShow, members] = await Promise.all([
+            db.fetchVendors(state.wedding.id),
+            db.fetchGuests(state.wedding.id),
+            db.fetchTasks(state.wedding.id),
+            db.fetchRunOfShow(state.wedding.id),
+            db.fetchMembers(state.wedding.id)
+        ]);
+
+        state.vendors = vendors;
+        state.guests = guests;
+        state.tasks = tasks;
+        state.runOfShow = runOfShow;
+        state.members = members;
+
+        try {
+            state.honeymoon = await db.fetchHoneymoon(state.wedding.honeymoon_trip_id);
+        } catch (error) {
+            console.error('Lua de mel indisponível', error);
+            state.honeymoon = null;
+        }
+
+        renderAll();
+    } catch (error) {
+        console.error(error);
+        toast('Falha ao carregar os dados.', 'error');
+    } finally {
+        state.reloading = false;
+        if (state.reloadQueued) {
+            state.reloadQueued = false;
+            reload();
+        }
+    }
+}
+
+// ==========================================================
+// Tela de vínculo (sem casamento ainda)
+// ==========================================================
+
+function showGate() {
+    $('boot-screen').hidden = true;
+    $('gate-screen').hidden = false;
+
+    const feedback = $('gate-feedback');
+    const say = (message, kind = 'error') => {
+        feedback.textContent = message;
+        feedback.className = `auth-feedback is-visible ${kind}`;
+    };
+
+    $('btn-accept-invite').addEventListener('click', async () => {
+        const token = $('invite-code').value.trim();
+        if (!token) return say('Cole o código do convite.');
+
+        try {
+            await db.acceptInvite(token);
+            window.location.reload();
+        } catch (error) {
+            say(error?.message || 'Convite inválido.');
+        }
+    });
+
+    $('btn-create-wedding').addEventListener('click', async () => {
+        const partner1Name = $('new-partner1').value.trim();
+        const partner2Name = $('new-partner2').value.trim();
+        if (!partner1Name || !partner2Name) return say('Preencha os dois nomes.');
+
+        try {
+            await db.createWedding({ partner1Name, partner2Name, weddingDate: $('new-date').value });
+            window.location.reload();
+        } catch (error) {
+            say(error?.message || 'Não foi possível criar.');
+        }
+    });
+
+    $('btn-gate-logout').addEventListener('click', async () => {
+        await db.signOut();
+        window.location.replace('index.html');
+    });
+}
+
+// ==========================================================
+// Cálculos
+// ==========================================================
+
+function vendorTotals(vendor) {
+    const payments = vendor.payments ?? [];
+    const scheduled = payments.reduce((sum, p) => sum + num(p.amount), 0);
+    const paid = payments.filter((p) => p.is_paid).reduce((sum, p) => sum + num(p.amount), 0);
+    const contracted = num(vendor.total_amount);
+
+    return {
+        contracted,
+        scheduled,
+        paid,
+        pending: scheduled - paid,
+        percent: contracted > 0 ? Math.min(100, (paid / contracted) * 100) : 0,
+        settled: contracted > 0 && paid >= contracted - 0.005
+    };
+}
+
+function financeSummary() {
+    let contracted = 0;
+    let scheduled = 0;
+    let paid = 0;
+    let overdue = 0;
+
+    for (const vendor of state.vendors) {
+        const totals = vendorTotals(vendor);
+        contracted += totals.contracted;
+        scheduled += totals.scheduled;
+        paid += totals.paid;
+        overdue += (vendor.payments ?? [])
+            .filter(isOverdue)
+            .reduce((sum, p) => sum + num(p.amount), 0);
+    }
+
+    const budget = num(state.wedding?.estimated_budget);
+
+    return {
+        budget,
+        contracted,
+        scheduled,
+        paid,
+        pending: scheduled - paid,
+        overdue,
+        remainingBudget: budget - contracted
+    };
+}
+
+function guestTotals() {
+    let adults = 0;
+    let children = 0;
+    let confirmed = 0;
+    let pending = 0;
+
+    for (const guest of state.guests) {
+        const a = num(guest.adults);
+        const c = num(guest.children);
+        adults += a;
+        children += c;
+        if (guest.status === 'confirmed') confirmed += a + c;
+        if (guest.status === 'pending') pending += a + c;
+    }
+
+    return { adults, children, total: adults + children, confirmed, pending };
+}
+
+function allPayments() {
+    return state.vendors.flatMap((vendor) =>
+        (vendor.payments ?? []).map((payment) => ({ ...payment, vendorName: vendor.name }))
+    );
+}
+
+// ==========================================================
+// Render
+// ==========================================================
+
+function renderAll() {
+    renderHeader();
+    renderOverview();
+    renderFinance();
+    renderGuests();
+    renderChecklist();
+    renderRunOfShow();
+    renderHoneymoon();
+    renderSettings();
+}
+
+function renderHeader() {
+    const wedding = state.wedding;
+    const names = `${wedding.partner1_name} & ${wedding.partner2_name}`;
+    $('couple-names').textContent = names;
+
+    const parts = [];
+    if (wedding.wedding_date) parts.push(formatDate(wedding.wedding_date));
+    if (wedding.city) parts.push(wedding.city);
+    $('wedding-subtitle').textContent = parts.join(' · ') || 'Defina a data em Configurações';
+
+    document.title = `${names} | Nosso Casório`;
+
+    if (wedding.cover_image_url) {
+        document.body.style.backgroundImage =
+            `linear-gradient(rgba(11,10,15,0.93), rgba(11,10,15,0.97)), url("${wedding.cover_image_url}")`;
+        document.body.style.backgroundSize = 'cover';
+        document.body.style.backgroundPosition = 'center';
+    }
+
+    startCountdown(wedding.wedding_date, wedding.ceremony_time);
+}
+
+function startCountdown(isoDate, ceremonyTime) {
+    clearInterval(state.countdownTimer);
+
+    const cells = { days: $('t-days'), hours: $('t-hours'), minutes: $('t-minutes'), seconds: $('t-seconds') };
+    const write = (d, h, m, s) => {
+        cells.days.textContent = String(d).padStart(2, '0');
+        cells.hours.textContent = String(h).padStart(2, '0');
+        cells.minutes.textContent = String(m).padStart(2, '0');
+        cells.seconds.textContent = String(s).padStart(2, '0');
+    };
+
+    const target = parseDate(isoDate);
+    if (!target) {
+        write('--', '--', '--', '--');
+        $('countdown-label').textContent = 'Contagem regressiva';
+        $('countdown-date').textContent = 'Cadastre a data em Configurações.';
+        return;
+    }
+
+    if (ceremonyTime) {
+        const [hour, minute] = String(ceremonyTime).split(':').map(Number);
+        target.setHours(hour || 0, minute || 0, 0, 0);
+    }
+
+    $('countdown-date').textContent = formatLongDate(isoDate) +
+        (ceremonyTime ? ` às ${formatTime(ceremonyTime)}` : '');
+
+    const tick = () => {
+        const diff = target.getTime() - Date.now();
+
+        if (diff <= 0) {
+            write(0, 0, 0, 0);
+            $('countdown-label').textContent = 'O grande dia chegou';
+            clearInterval(state.countdownTimer);
+            return;
+        }
+
+        $('countdown-label').textContent = 'Faltam';
+        write(
+            Math.floor(diff / 86400000),
+            Math.floor(diff / 3600000) % 24,
+            Math.floor(diff / 60000) % 60,
+            Math.floor(diff / 1000) % 60
+        );
+    };
+
+    tick();
+    state.countdownTimer = setInterval(tick, 1000);
+}
+
+function statCard({ label, value, note, variant = '' }) {
+    return `
+        <div class="stat-card ${variant}">
+            <span class="stat-label">${escapeHtml(label)}</span>
+            <strong class="stat-value">${escapeHtml(value)}</strong>
+            ${note ? `<small class="stat-note">${escapeHtml(note)}</small>` : ''}
+        </div>`;
+}
+
+function renderOverview() {
+    const finance = financeSummary();
+    const guests = guestTotals();
+    const perGuest = guests.confirmed > 0 ? finance.contracted / guests.confirmed : 0;
+
+    const cards = [
+        finance.budget > 0
+            ? {
+                label: 'Orçamento',
+                value: money(finance.budget),
+                note: finance.remainingBudget >= 0
+                    ? `Sobram ${money(finance.remainingBudget)} para contratar`
+                    : `Passou ${money(Math.abs(finance.remainingBudget))} do previsto`,
+                variant: finance.remainingBudget >= 0 ? 'accent' : 'bad'
+            }
+            : { label: 'Orçamento', value: 'Não definido', note: 'Defina em Configurações' },
+        { label: 'Total contratado', value: money(finance.contracted), note: `${state.vendors.length} fornecedor(es)` },
+        { label: 'Já pago', value: money(finance.paid), variant: 'good' },
+        {
+            label: 'Falta pagar',
+            value: money(finance.pending),
+            note: finance.overdue > 0 ? `${money(finance.overdue)} em atraso` : 'Nada em atraso',
+            variant: finance.overdue > 0 ? 'bad' : ''
+        },
+        { label: 'Confirmados', value: String(guests.confirmed), note: `${guests.total} convidados no total` },
+        {
+            label: 'Custo por confirmado',
+            value: guests.confirmed > 0 ? money(perGuest) : '—',
+            note: guests.confirmed > 0 ? 'Contratado ÷ confirmados' : 'Confirme convidados'
+        }
+    ];
+
+    $('overview-stats').innerHTML = cards.map(statCard).join('');
+
+    // Próximos pagamentos
+    const upcoming = allPayments()
+        .filter((p) => !p.is_paid && p.due_date)
+        .sort((a, b) => a.due_date.localeCompare(b.due_date))
+        .slice(0, 6);
+
+    $('upcoming-payments').innerHTML = upcoming.length
+        ? upcoming.map((payment) => {
+            const overdue = isOverdue(payment);
+            return `
+                <div class="upcoming-row">
+                    <div>
+                        <strong>${escapeHtml(payment.vendorName)}</strong>
+                        <small>${escapeHtml(payment.description)} · ${formatDate(payment.due_date)}</small>
+                    </div>
+                    <div style="text-align:right;">
+                        <strong class="money">${money(payment.amount)}</strong><br>
+                        <span class="badge ${overdue ? 'danger' : 'neutral'}">
+                            ${overdue ? 'Atrasado' : 'A vencer'}
+                        </span>
+                    </div>
+                </div>`;
+        }).join('')
+        : '<p class="empty-state">Nenhum pagamento em aberto.</p>';
+
+    // Barras de progresso
+    const doneTasks = state.tasks.filter((t) => t.status === 'done').length;
+    const taskPercent = state.tasks.length ? (doneTasks / state.tasks.length) * 100 : 0;
+    const payPercent = finance.scheduled > 0 ? (finance.paid / finance.scheduled) * 100 : 0;
+    const rsvpPercent = guests.total > 0 ? (guests.confirmed / guests.total) * 100 : 0;
+
+    $('overview-progress').innerHTML = [
+        meter('Pagamentos quitados', `${Math.round(payPercent)}%`, payPercent),
+        meter('Checklist', `${doneTasks}/${state.tasks.length}`, taskPercent),
+        meter('Confirmações', `${guests.confirmed}/${guests.total}`, rsvpPercent),
+        finance.budget > 0
+            ? meter('Orçamento comprometido',
+                `${Math.round((finance.contracted / finance.budget) * 100)}%`,
+                (finance.contracted / finance.budget) * 100,
+                finance.contracted > finance.budget)
+            : ''
+    ].join('');
+}
+
+function meter(label, value, percent, danger = false) {
+    const width = Math.max(0, Math.min(100, percent || 0));
+    return `
+        <div class="meter">
+            <div class="meter-head"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>
+            <div class="progress-track">
+                <div class="progress-fill ${!danger && width >= 100 ? 'done' : ''}"
+                     style="width:${width}%; ${danger ? 'background:var(--danger);' : ''}"></div>
+            </div>
+        </div>`;
+}
+
+function renderFinance() {
+    const finance = financeSummary();
+
+    $('finance-stats').innerHTML = [
+        { label: 'Contratado', value: money(finance.contracted), variant: 'accent' },
+        { label: 'Pago', value: money(finance.paid), variant: 'good' },
+        { label: 'Em aberto', value: money(finance.pending) },
+        {
+            label: 'Em atraso',
+            value: money(finance.overdue),
+            variant: finance.overdue > 0 ? 'bad' : '',
+            note: finance.overdue > 0 ? 'Resolver com prioridade' : 'Tudo em dia'
+        }
+    ].map(statCard).join('');
+
+    // Lista de fornecedores
+    $('vendors-list').innerHTML = state.vendors.length
+        ? state.vendors.map(renderVendorCard).join('')
+        : '<p class="empty-state">Nenhum fornecedor cadastrado ainda. Use o formulário acima.</p>';
+
+    renderCashflow();
+}
+
+function renderVendorCard(vendor) {
+    const totals = vendorTotals(vendor);
+    const category = CATEGORY_LABELS[vendor.category] ?? vendor.category;
+    const meta = [category, vendor.payment_method, vendor.notes].filter(Boolean).join(' · ');
+
+    const payments = (vendor.payments ?? []).map((payment) => {
+        const overdue = isOverdue(payment);
+        const classes = ['payment-row', payment.is_paid ? 'paid' : '', overdue ? 'overdue' : ''].join(' ');
+        return `
+            <div class="${classes}">
+                <div class="payment-main">
+                    <input type="checkbox" class="payment-check" ${payment.is_paid ? 'checked' : ''}
+                           data-action="toggle-payment" data-id="${payment.id}"
+                           aria-label="Marcar ${escapeHtml(payment.description)} como pago">
+                    <div class="payment-desc">
+                        <strong>${escapeHtml(payment.description)}</strong>
+                        <small>${formatDate(payment.due_date)}${overdue ? ' · atrasado' : ''}</small>
+                    </div>
+                </div>
+                <span class="payment-amount">${money(payment.amount)}</span>
+            </div>`;
+    }).join('');
+
+    return `
+        <article class="vendor-card ${totals.settled ? 'settled' : ''}">
+            <header class="vendor-head">
+                <div>
+                    <h3 class="vendor-name">${escapeHtml(vendor.name)} ${totals.settled ? '✓' : ''}</h3>
+                    ${meta ? `<p class="vendor-meta">${escapeHtml(meta)}</p>` : ''}
+                </div>
+                <div>
+                    <div class="vendor-total">${money(totals.contracted)}</div>
+                    <div class="vendor-actions">
+                        <button class="icon-btn edit" data-action="edit-vendor" data-id="${vendor.id}"
+                                title="Editar">✎</button>
+                        <button class="icon-btn delete" data-action="delete-vendor" data-id="${vendor.id}"
+                                title="Excluir">✕</button>
+                    </div>
+                </div>
+            </header>
+
+            <div class="vendor-progress">
+                <div class="progress-labels">
+                    <span>Pago ${money(totals.paid)} de ${money(totals.contracted)}</span>
+                    <span>${Math.round(totals.percent)}%</span>
+                </div>
+                <div class="progress-track">
+                    <div class="progress-fill ${totals.settled ? 'done' : ''}" style="width:${totals.percent}%"></div>
+                </div>
+            </div>
+
+            ${payments || '<p class="empty-state">Sem parcelas lançadas.</p>'}
+        </article>`;
+}
+
+function renderCashflow() {
+    const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    const months = new Map();
+
+    for (const payment of allPayments()) {
+        if (!payment.due_date) continue;
+        const key = payment.due_date.slice(0, 7);
+
+        if (!months.has(key)) {
+            const [year, month] = key.split('-');
+            months.set(key, {
+                label: `${monthNames[Number(month) - 1]} ${year}`,
+                total: 0, paid: 0, pending: 0, items: []
+            });
+        }
+
+        const bucket = months.get(key);
+        const amount = num(payment.amount);
+        bucket.total += amount;
+        if (payment.is_paid) bucket.paid += amount;
+        else bucket.pending += amount;
+        bucket.items.push(payment);
+    }
+
+    const keys = [...months.keys()].sort();
+    const container = $('cashflow');
+
+    if (!keys.length) {
+        container.innerHTML = '<p class="empty-state">Nenhum pagamento programado ainda.</p>';
+        return;
+    }
+
+    container.innerHTML = keys.map((key) => {
+        const month = months.get(key);
+        const percent = month.total > 0 ? (month.paid / month.total) * 100 : 0;
+        const settled = month.pending <= 0.005 && month.total > 0;
+
+        const items = month.items
+            .sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? ''))
+            .map((item) => `
+                <div class="month-item">
+                    <span style="${item.is_paid ? 'opacity:.55;text-decoration:line-through;' : ''}">
+                        ${escapeHtml(item.vendorName)} · ${escapeHtml(item.description)}
+                    </span>
+                    <strong class="money" style="color:${item.is_paid ? 'var(--success)' : 'var(--text)'}">
+                        ${money(item.amount)}
+                    </strong>
+                </div>`).join('');
+
+        return `
+            <div class="month-card ${settled ? 'settled' : ''}">
+                <h4>${escapeHtml(month.label)} ${settled ? '✓' : ''}</h4>
+                <div class="month-line"><span>Total</span><strong>${money(month.total)}</strong></div>
+                <div class="month-line">
+                    <span>Falta</span>
+                    <strong style="color:${settled ? 'var(--success)' : 'var(--danger)'}">${money(month.pending)}</strong>
+                </div>
+                <div class="progress-track" style="height:4px;margin-top:6px;">
+                    <div class="progress-fill ${settled ? 'done' : ''}" style="width:${percent}%"></div>
+                </div>
+                <div class="month-items">${items}</div>
+            </div>`;
+    }).join('');
+}
+
+function renderGuests() {
+    const totals = guestTotals();
+
+    $('guest-stats').innerHTML = [
+        { label: 'Total de pessoas', value: String(totals.total), variant: 'accent' },
+        { label: 'Confirmados', value: String(totals.confirmed), variant: 'good' },
+        { label: 'Pendentes', value: String(totals.pending) },
+        { label: 'Adultos / crianças', value: `${totals.adults} / ${totals.children}` }
+    ].map(statCard).join('');
+
+    const groomsmen = [];
+    const others = [];
+
+    for (const guest of state.guests) {
+        (guest.group_name === 'Padrinhos' ? groomsmen : others).push(renderGuestRow(guest));
+    }
+
+    $('padrinhos-list').innerHTML = groomsmen.length
+        ? groomsmen.join('')
+        : '<p class="empty-state">Nenhum padrinho cadastrado.</p>';
+    $('guests-list').innerHTML = others.length
+        ? others.join('')
+        : '<p class="empty-state">Nenhum convidado cadastrado.</p>';
+
+    renderDrinks();
+}
+
+function renderGuestRow(guest) {
+    const status = GUEST_STATUS[guest.status] ?? GUEST_STATUS.pending;
+    const details = [
+        guest.group_name,
+        `${num(guest.adults)} adulto(s)`,
+        num(guest.children) > 0 ? `${num(guest.children)} criança(s)` : null,
+        guest.phone
+    ].filter(Boolean).join(' · ');
+
+    const options = Object.entries(GUEST_STATUS).map(([value, info]) =>
+        `<option value="${value}" ${guest.status === value ? 'selected' : ''}>${info.label}</option>`
+    ).join('');
+
+    return `
+        <div class="row-card ${guest.status}">
+            <div class="row-main">
+                <strong>${escapeHtml(guest.name)}</strong>
+                <small>${escapeHtml(details)}</small>
+            </div>
+            <div class="row-actions">
+                <span class="badge ${status.badge}">${status.label}</span>
+                <select class="input btn-sm" style="width:auto;padding:5px 26px 5px 9px;"
+                        data-action="guest-status" data-id="${guest.id}" aria-label="Status de ${escapeHtml(guest.name)}">
+                    ${options}
+                </select>
+                <button class="icon-btn edit" data-action="edit-guest" data-id="${guest.id}" title="Editar">✎</button>
+                <button class="icon-btn delete" data-action="delete-guest" data-id="${guest.id}" title="Excluir">✕</button>
+            </div>
+        </div>`;
+}
+
+function renderDrinks() {
+    const totals = { beer: 0, soda: 0, juice: 0, water: 0, cocktail: 0 };
+
+    for (const guest of state.guests) {
+        if (guest.status !== 'confirmed') continue;
+        const drinks = guest.beverages ?? {};
+        totals.beer += num(drinks.beer) * DRINK_RATIOS.beer;
+        totals.soda += num(drinks.soda) * DRINK_RATIOS.soda;
+        totals.juice += num(drinks.juice) * DRINK_RATIOS.juice;
+        totals.water += num(drinks.water) * DRINK_RATIOS.water;
+        totals.cocktail += num(drinks.cocktail);
+    }
+
+    $('drinks-summary').innerHTML = [
+        { label: '🍺 Cerveja', value: `${Math.ceil(totals.beer)} L` },
+        { label: '🥤 Refrigerante', value: `${Math.ceil(totals.soda)} L` },
+        { label: '🧃 Suco', value: `${Math.ceil(totals.juice)} L` },
+        { label: '💧 Água', value: `${Math.ceil(totals.water)} L` },
+        { label: '🍸 Drinks', value: `${totals.cocktail} pessoa(s)` }
+    ].map(statCard).join('');
+}
+
+function renderChecklist() {
+    const done = state.tasks.filter((task) => task.status === 'done').length;
+    const percent = state.tasks.length ? Math.round((done / state.tasks.length) * 100) : 0;
+
+    $('checklist-percent').textContent = `${percent}%`;
+    $('checklist-bar').style.width = `${percent}%`;
+    $('checklist-bar').className = `progress-fill ${percent >= 100 ? 'done' : ''}`;
+
+    $('checklist-list').innerHTML = state.tasks.length
+        ? state.tasks.map((task) => {
+            const status = TASK_STATUS[task.status] ?? TASK_STATUS.pending;
+            const options = Object.entries(TASK_STATUS).map(([value, info]) =>
+                `<option value="${value}" ${task.status === value ? 'selected' : ''}>${info.label}</option>`
+            ).join('');
+            const overdue = task.status !== 'done' && task.due_date && task.due_date < todayIso();
+
+            return `
+                <div class="row-card ${task.status}">
+                    <div class="row-main">
+                        <strong>${escapeHtml(task.title)}</strong>
+                        ${task.due_date
+                    ? `<small>Prazo: ${formatDate(task.due_date)}${overdue ? ' · vencido' : ''}</small>`
+                    : ''}
+                    </div>
+                    <div class="row-actions">
+                        <span class="badge ${overdue ? 'danger' : status.badge}">
+                            ${overdue ? 'Vencido' : status.label}
+                        </span>
+                        <select class="input btn-sm" style="width:auto;padding:5px 26px 5px 9px;"
+                                data-action="task-status" data-id="${task.id}"
+                                aria-label="Status de ${escapeHtml(task.title)}">${options}</select>
+                        <button class="icon-btn delete" data-action="delete-task" data-id="${task.id}"
+                                title="Excluir">✕</button>
+                    </div>
+                </div>`;
+        }).join('')
+        : '<p class="empty-state">Checklist vazio. Adicione a primeira tarefa acima.</p>';
+}
+
+function renderRunOfShow() {
+    $('ros-timeline').innerHTML = state.runOfShow.length
+        ? state.runOfShow.map((item) => `
+            <div class="timeline-row">
+                <div class="timeline-time">${formatTime(item.event_time)}</div>
+                <div class="timeline-dot"></div>
+                <div class="timeline-body">
+                    <strong>${escapeHtml(item.title)}</strong>
+                    <span class="badge neutral" style="margin-top:6px;">${ROS_ROLE[item.role] ?? ''}</span>
+                    <button class="icon-btn delete" style="float:right;" data-action="delete-ros"
+                            data-id="${item.id}" title="Excluir">✕</button>
+                </div>
+            </div>`).join('')
+        : '<p class="empty-state">Nenhum momento no roteiro ainda.</p>';
+}
+
+function renderHoneymoon() {
+    const container = $('honeymoon-content');
+    const trip = state.honeymoon;
+
+    if (!trip) {
+        container.innerHTML = `
+            <p class="empty-state">
+                Nenhuma viagem vinculada. Cadastre a lua de mel no app de viagem e ela aparece aqui.
+            </p>`;
+        return;
+    }
+
+    const expenses = trip.expenses ?? [];
+    const planned = expenses.reduce((sum, e) => sum + num(e.planned_amount ?? e.actual_amount), 0);
+    const actual = expenses.reduce((sum, e) => sum + num(e.actual_amount ?? e.planned_amount), 0);
+    const paid = expenses.reduce((sum, e) => sum + num(e.paid_amount), 0);
+
+    const period = trip.start_date && trip.end_date
+        ? `${formatDate(trip.start_date)} a ${formatDate(trip.end_date)}`
+        : 'Datas a definir';
+
+    const destinations = (trip.destinations ?? []).map((destination, index) => `
+        <span class="chip"><span class="chip-index">${index + 1}</span>${escapeHtml(destination.city)}</span>
+    `).join('');
+
+    const expenseRows = expenses.length
+        ? expenses.map((expense) => {
+            const total = num(expense.actual_amount ?? expense.planned_amount);
+            const paidAmount = num(expense.paid_amount);
+            const settled = paidAmount >= total - 0.005 && total > 0;
+            return `
+                <div class="row-card ${settled ? 'done' : 'pending'}">
+                    <div class="row-main">
+                        <strong>${escapeHtml(expense.description)}</strong>
+                        <small>Pago ${money(paidAmount)} de ${money(total)}</small>
+                    </div>
+                    <span class="badge ${settled ? 'success' : 'warning'}">
+                        ${settled ? 'Quitado' : money(total - paidAmount) + ' em aberto'}
+                    </span>
+                </div>`;
+        }).join('')
+        : '<p class="empty-state">Nenhum gasto lançado na viagem.</p>';
+
+    const checklists = (trip.checklists ?? []).map((list) => {
+        const items = (list.checklist_items ?? []).map((item) => `
+            <div class="check-row ${item.is_done ? 'done' : ''}">
+                <input type="checkbox" id="hm-${item.id}" ${item.is_done ? 'checked' : ''}
+                       data-action="toggle-honeymoon-item" data-id="${item.id}">
+                <label for="hm-${item.id}">${escapeHtml(item.title)}</label>
+            </div>`).join('');
+
+        const doneCount = (list.checklist_items ?? []).filter((i) => i.is_done).length;
+
+        return `
+            <div class="panel">
+                <h3 class="panel-title">${escapeHtml(list.title)}
+                    <span class="badge neutral">${doneCount}/${(list.checklist_items ?? []).length}</span>
+                </h3>
+                ${items || '<p class="empty-state">Lista vazia.</p>'}
+            </div>`;
+    }).join('');
+
+    const stays = (trip.accommodations ?? []).map((stay) => `
+        <div class="row-card">
+            <div class="row-main">
+                <strong>${escapeHtml(stay.name)}</strong>
+                <small>${escapeHtml(stay.address ?? '')}</small>
+            </div>
+            <span class="badge neutral">${money(stay.total_price)}</span>
+        </div>`).join('');
+
+    const flights = (trip.flights ?? []).map((flight) => `
+        <div class="row-card">
+            <div class="row-main">
+                <strong>${escapeHtml(flight.airline ?? 'Voo')} ${escapeHtml(flight.flight_number ?? '')}</strong>
+                <small>${escapeHtml(flight.origin_iata ?? '')} → ${escapeHtml(flight.destination_iata ?? '')}</small>
+            </div>
+            <span class="badge neutral">${money(flight.total_price)}</span>
+        </div>`).join('');
+
+    container.innerHTML = `
+        <div class="trip-hero">
+            <h3>${escapeHtml(trip.name)}</h3>
+            <p>${escapeHtml(trip.destination_label ?? '')} · ${period} · ${num(trip.travelers_count)} viajante(s)</p>
+            ${destinations ? `<div class="chip-row">${destinations}</div>` : ''}
+        </div>
+
+        <div class="stat-grid">
+            ${[
+            trip.estimated_budget
+                ? { label: 'Orçamento da viagem', value: money(trip.estimated_budget), variant: 'accent' }
+                : { label: 'Orçamento da viagem', value: 'Não definido' },
+            { label: 'Previsto', value: money(planned) },
+            { label: 'Já pago', value: money(paid), variant: 'good' },
+            {
+                label: 'Falta pagar',
+                value: money(Math.max(0, actual - paid)),
+                variant: actual - paid > 0 ? 'bad' : ''
+            }
+        ].map(statCard).join('')}
+        </div>
+
+        <div class="panel"><h3 class="panel-title">Gastos da viagem</h3>${expenseRows}</div>
+        ${stays ? `<div class="panel"><h3 class="panel-title">Hospedagem</h3>${stays}</div>` : ''}
+        ${flights ? `<div class="panel"><h3 class="panel-title">Voos</h3>${flights}</div>` : ''}
+        ${checklists}`;
+}
+
+function renderSettings() {
+    const wedding = state.wedding;
+
+    const setIfIdle = (id, value) => {
+        const element = $(id);
+        if (element && document.activeElement !== element) element.value = value ?? '';
+    };
+
+    setIfIdle('w-partner1', wedding.partner1_name);
+    setIfIdle('w-partner2', wedding.partner2_name);
+    setIfIdle('w-date', wedding.wedding_date);
+    setIfIdle('w-time', formatTime(wedding.ceremony_time));
+    setIfIdle('w-budget', wedding.estimated_budget);
+    setIfIdle('w-venue', wedding.venue);
+    setIfIdle('w-city', wedding.city);
+    setIfIdle('w-cover', wedding.cover_image_url);
+
+    $('members-list').innerHTML = state.members.map((member) => {
+        const accepted = member.invite_status === 'accepted';
+        const name = member.display_name || member.invited_email || 'Membro';
+        const roleLabel = member.role === 'owner' ? 'Dono' : member.role === 'editor' ? 'Edita' : 'Só vê';
+
+        return `
+            <div class="row-card ${accepted ? 'confirmed' : 'pending'}">
+                <div class="row-main">
+                    <strong>${escapeHtml(name)}</strong>
+                    <small>${roleLabel}${accepted ? '' : ` · código: ${escapeHtml(member.invite_token)}`}</small>
+                </div>
+                <div class="row-actions">
+                    <span class="badge ${accepted ? 'success' : 'warning'}">
+                        ${accepted ? 'Ativo' : 'Convite pendente'}
+                    </span>
+                    ${accepted ? '' : `<button class="btn btn-sm" data-action="copy-invite"
+                        data-token="${escapeHtml(member.invite_token)}">Copiar código</button>`}
+                    ${member.role === 'owner' ? '' : `<button class="icon-btn delete" data-action="remove-member"
+                        data-id="${member.id}" title="Remover">✕</button>`}
+                </div>
+            </div>`;
+    }).join('') || '<p class="empty-state">Só você tem acesso.</p>';
+}
+
+// ==========================================================
+// Eventos
+// ==========================================================
+
+function wireEvents() {
+    // Navegação
+    document.querySelectorAll('.nav-btn[data-target]').forEach((button) => {
+        button.addEventListener('click', () => {
+            document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+            button.classList.add('active');
+            $(button.dataset.target).classList.add('active');
+            closeMenu();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         });
     });
-    const sortedKeys = Object.keys(monthsMap).sort();
-    if (sortedKeys.length === 0) { container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1 / -1;">Nenhum pagamento programado no calendário ainda.</p>'; return; }
-    container.innerHTML = sortedKeys.map(k => {
-        const m = monthsMap[k]; m.items.sort((a, b) => a.date.localeCompare(b.date));
-        const percent = m.total > 0 ? (m.paid / m.total) * 100 : 0; const isDone = m.pending === 0 && m.total > 0;
-        const itemsHtml = m.items.map(item => {
-            const formattedDate = item.date.split('-').reverse().join('/');
-            return `<div class="installment-item" style="padding: 10px; margin-top: 8px; ${item.isPaid ? 'opacity: 0.5; border-color: var(--success-green);' : 'border-color: rgba(255,255,255,0.08);'}"><div style="display:flex; justify-content:space-between; align-items:center; width: 100%; gap: 10px;"><div style="display:flex; align-items:center; gap: 10px; min-width: 0; flex: 1;"><input type="checkbox" style="accent-color: var(--gold-primary); width: 16px; height: 16px; cursor: pointer; flex-shrink: 0;" ${item.isPaid ? 'checked' : ''} onchange="togglePay(${item.vIdx}, ${item.pIdx})"><div style="display:flex; flex-direction:column; min-width: 0; flex: 1;"><strong style="color: #fff; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${item.vendorName}">${item.vendorName}</strong><small style="color: var(--text-muted); font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.desc} • ${formattedDate}</small></div></div><strong style="color: ${item.isPaid ? 'var(--success-green)' : '#fff'}; font-size: 0.85rem; white-space: nowrap; flex-shrink: 0;">R$ ${item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div></div>`;
-        }).join('');
-        return `<div style="background: rgba(0,0,0,0.2); border: 1px solid ${isDone ? 'var(--success-green)' : 'var(--glass-border)'}; border-radius: 8px; padding: 15px; display: flex; flex-direction: column;"><h4 style="color: var(--gold-light); margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px;">${m.label} ${isDone ? '✅' : ''}</h4><div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 5px;"><span style="color: var(--text-muted);">Total:</span><strong style="color: #fff;">R$ ${m.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div><div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 8px;"><span style="color: var(--text-muted);">Falta Pagar:</span><strong style="color: ${isDone ? 'var(--success-green)' : 'var(--danger-red)'};">R$ ${m.pending.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div><div class="progress-track" style="height: 4px; margin-bottom: 10px;"><div class="progress-fill" style="width: ${percent}%; background: ${isDone ? 'var(--success-green)' : 'var(--gold-primary)'};"></div></div><div style="flex-grow: 1; max-height: 220px; overflow-y: auto; overflow-x: hidden; padding-right: 5px; margin-top: 5px;">${itemsHtml}</div></div>`;
-    }).join('');
-};
 
-const renderVendors = () => {
-    const container = document.getElementById('vendors-list-container'); if (!container) return;
-    let globalTotal = 0, globalPaid = 0;
-    container.innerHTML = vendors.map((v, vIdx) => {
-        let vendorPaid = 0; v.payments.forEach(p => { if (p.isPaid) vendorPaid += parseFloat(p.amount); });
-        globalTotal += parseFloat(v.total || 0); globalPaid += vendorPaid; const percent = v.total > 0 ? (vendorPaid / v.total) * 100 : 0; const isDone = percent >= 100;
-        return `<div class="premium-panel" style="margin-bottom: 2rem; border-color: ${isDone ? 'var(--success-green)' : 'var(--glass-border)'}">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 1rem;">
-                <div><h3 style="color:var(--gold-primary); font-family: var(--font-serif); font-size: 1.5rem;">${v.name}</h3><small style="color:var(--text-muted); font-size: 0.75rem;">MODALIDADE: ${v.method}</small></div>
-                <div style="text-align:right;"><div style="font-weight:bold; font-size: 1.2rem; color: #fff; margin-bottom: 10px;">Total: R$ ${parseFloat(v.total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div><button class="btn-primary" style="padding: 4px 8px; font-size: 0.75rem; background: transparent; border: 1px solid var(--gold-primary); color: var(--gold-primary);" onclick="iniciarEdicaoFornecedor(${vIdx})">✏️ Editar</button> <button class="btn-primary" style="padding: 4px 8px; font-size: 0.75rem; background: transparent; border: 1px solid var(--danger-red); color: var(--danger-red);" onclick="excluirFornecedor(${vIdx})">✕ Excluir</button></div>
-            </div>
-            <div class="progress-container"><div class="progress-labels"><span>Progresso: ${Math.round(percent)}%</span><span>Pago: R$ ${vendorPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div><div class="progress-track"><div class="progress-fill" style="width: ${percent}%;"></div></div></div>
-            <div style="margin-top: 1.5rem;">${v.payments.map((p, pIdx) => `<div class="installment-item" style="${p.isPaid ? 'opacity: 0.6; border-color: var(--success-green);' : ''}"><div style="display:flex; align-items:center; gap: 10px;"><input type="checkbox" style="accent-color: var(--gold-primary); width: 16px; height: 16px; cursor: pointer;" ${p.isPaid ? 'checked' : ''} onchange="togglePay(${vIdx},${pIdx})"> <strong style="color: #fff; font-size: 0.95rem;">${p.desc}</strong> <small style="color: var(--text-muted); font-size: 0.8rem;">(${p.date.split('-').reverse().join('/')})</small></div><div style="display:flex; align-items:center; gap: 15px;"><strong style="color: #fff; font-size: 0.95rem;">R$ ${parseFloat(p.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>${!p.isPaid ? `<a href="#" class="btn-primary" style="padding: 5px 10px; font-size: 0.75rem; border-radius: 4px;">📅 Agendar</a>` : `<span style="color:var(--success-green); font-size:0.8rem; font-weight:bold;">✔ Pago</span>`}</div></div>`).join('')}</div>
-        </div>`;
-    }).join('');
-    document.getElementById('finance-total').innerText = `R$ ${globalTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`; document.getElementById('finance-paid').innerText = `R$ ${globalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`; document.getElementById('finance-pending').innerText = `R$ ${(globalTotal - globalPaid).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-    renderCashflow();
-};
-
-window.togglePay = async (vIdx, pIdx) => { vendors[vIdx].payments[pIdx].isPaid = !vendors[vIdx].payments[pIdx].isPaid; renderVendors(); await salvarNuvem(); };
-window.excluirFornecedor = async (idx) => { if (confirm("Excluir fornecedor?")) { vendors.splice(idx, 1); renderVendors(); await salvarNuvem(); } };
-window.iniciarEdicaoFornecedor = (idx) => {
-    editVendorIndex = idx; const v = vendors[idx];
-    document.getElementById('v-name').value = v.name; document.getElementById('v-method').value = v.method; document.getElementById('v-total').value = v.total; document.getElementById('v-installments').value = v.payments.length; document.getElementById('v-date').value = v.payments[0].date;
-    document.getElementById('vendor-form-title').innerText = "✏️ Editando Fornecedor"; btnSubmitVendor.innerText = "Atualizar Contrato"; btnCancelEdit.style.display = 'block'; document.getElementById('vendors').scrollIntoView({ behavior: "smooth" });
-};
-btnCancelEdit?.addEventListener('click', () => { editVendorIndex = -1; vForm.reset(); document.getElementById('vendor-form-title').innerText = "+ Cadastrar Novo Fornecedor"; btnSubmitVendor.innerText = "Salvar Contrato de Fornecedor"; btnCancelEdit.style.display = 'none'; });
-
-vForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const entry = parseFloat(document.getElementById('v-entry').value) || 0, total = parseFloat(document.getElementById('v-total').value), instCount = parseInt(document.getElementById('v-installments').value), firstDate = document.getElementById('v-date').value;
-    let payments = []; if (entry > 0) payments.push({ desc: 'Entrada', amount: entry, date: firstDate, isPaid: false });
-    for (let i = 1; i <= instCount; i++) { let d = new Date(firstDate + 'T12:00:00'); d.setMonth(d.getMonth() + (entry > 0 ? i : i - 1)); payments.push({ desc: `Parc ${i}/${instCount}`, amount: (total - entry) / instCount, date: d.toISOString().split('T')[0], isPaid: false }); }
-    const novo = { name: document.getElementById('v-name').value, method: document.getElementById('v-method').value, total, payments };
-    editVendorIndex >= 0 ? vendors[editVendorIndex] = novo : vendors.push(novo); renderVendors(); await salvarNuvem(); btnCancelEdit.click();
-});
-
-// ==========================================
-// 5. CONVIDADOS E BEBIDAS (AGORA COM EDIÇÃO!)
-// ==========================================
-const gForm = document.getElementById('guest-form'), groupSelect = document.getElementById('g-group'), adultsInput = document.getElementById('g-adults');
-groupSelect?.addEventListener('change', () => { if (groupSelect.value === "Padrinhos") adultsInput.value = 2; });
-
-const renderGuests = () => {
-    let totalA = 0, totalC = 0, totalConf = 0; const pList = [], gList = [];
-    guests.forEach((g, i) => {
-        const a = parseInt(g.adults || 0), c = parseInt(g.children || 0), t = a + c; totalA += a; totalC += c; if (g.status === 'Confirmado') totalConf += t;
-        const telDisplay = g.phone && g.phone !== 'Não informado' ? `📞 ${g.phone} | ` : '';
-        const html = `
-        <div class="premium-panel" style="display:flex; justify-content:space-between; align-items:center; border-left: 4px solid ${g.status === 'Confirmado' ? 'var(--success-green)' : g.status === 'Recusado' ? 'var(--danger-red)' : 'var(--gold-primary)'}; padding: 1rem; margin-bottom:10px;">
-            <div><h4 style="color:#fff;">${g.name}</h4><small style="color:var(--text-muted)">${telDisplay}${g.group} | Adultos: ${a} | Crianças: ${c}</small></div>
-            <div style="display:flex; gap:10px;">
-                <select onchange="updG(${i}, this.value)" class="premium-input" style="padding:5px;">
-                    <option ${g.status === 'Pendente' ? 'selected' : ''}>Pendente</option>
-                    <option ${g.status === 'Confirmado' ? 'selected' : ''}>Confirmado</option>
-                    <option ${g.status === 'Recusado' ? 'selected' : ''}>Recusado</option>
-                </select>
-                <button onclick="iniciarEdicaoConvidado(${i})" style="background:none; border:none; color:var(--gold-primary); font-size:1.2rem; cursor:pointer;" title="Editar">✏️</button>
-                <button onclick="delG(${i})" style="background:none; border:none; color:var(--danger-red); font-size:1.2rem; cursor:pointer;" title="Excluir">✕</button>
-            </div>
-        </div>`;
-        g.group === 'Padrinhos' ? pList.push(html) : gList.push(html);
+    $('btn-menu').addEventListener('click', () => {
+        const isOpen = $('sidebar').classList.toggle('open');
+        $('scrim').hidden = !isOpen;
+        $('btn-menu').setAttribute('aria-expanded', String(isOpen));
     });
-    document.getElementById('padrinhos-list-container').innerHTML = pList.length > 0 ? pList.join('') : '<p style="color:var(--text-muted)">Nenhum padrinho adicionado.</p>';
-    document.getElementById('guests-list-container').innerHTML = gList.length > 0 ? gList.join('') : '<p style="color:var(--text-muted)">Nenhum convidado adicionado.</p>';
-    document.getElementById('guest-total').innerText = totalA + totalC; document.getElementById('guest-adults').innerText = totalA; document.getElementById('guest-children').innerText = totalC; document.getElementById('guest-confirmed').innerText = totalConf;
-};
+    $('scrim').addEventListener('click', closeMenu);
 
-const renderBebidas = () => {
-    const container = document.getElementById('drinks-summary-container'); if (!container) return;
-    let totals = { beer: 0, soda: 0, juice: 0, water: 0, cocktail: 0 };
-    guests.forEach(g => {
-        if (g.beverages?.beer) totals.beer += (g.beverages.beer * 1.5);
-        if (g.beverages?.soda) totals.soda += (g.beverages.soda * 0.6);
-        if (g.beverages?.juice) totals.juice += (g.beverages.juice * 0.4);
-        if (g.beverages?.water) totals.water += (g.beverages.water * 0.5);
-        if (g.beverages?.cocktail) totals.cocktail += g.beverages.cocktail;
+    $('btn-logout').addEventListener('click', async () => {
+        state.unsubscribe?.();
+        await db.signOut();
+        window.location.replace('index.html');
     });
-    container.innerHTML = `<div class="premium-panel"><p class="time-label">🍺 Chopp / Cerveja</p><span class="gold-number">${Math.ceil(totals.beer)}L</span></div><div class="premium-panel"><p class="time-label">🥤 Refrigerante</p><span class="gold-number">${Math.ceil(totals.soda)}L</span></div><div class="premium-panel"><p class="time-label">🧃 Suco Natural</p><span class="gold-number">${Math.ceil(totals.juice)}L</span></div><div class="premium-panel"><p class="time-label">💧 Água Mineral</p><span class="gold-number">${Math.ceil(totals.water)}L</span></div><div class="premium-panel"><p class="time-label">🍸 Drinks (Qtd Pessoas)</p><span class="gold-number">${totals.cocktail}</span></div>`;
-};
 
-window.updG = async (i, s) => { guests[i].status = s; renderGuests(); renderBebidas(); await salvarNuvem(); };
-window.delG = async (i) => { if (confirm("Remover convidado?")) { guests.splice(i, 1); renderGuests(); renderBebidas(); await salvarNuvem(); } };
+    wireVendorForm();
+    wireGuestForm();
+    wireChecklist();
+    wireRunOfShow();
+    wireSettings();
 
-// NOVA FUNÇÃO: Iniciar a Edição do Convidado
-window.iniciarEdicaoConvidado = (idx) => {
-    editGuestIndex = idx;
-    const g = guests[idx];
+    // Ações delegadas (funcionam mesmo depois de redesenhar as listas)
+    document.addEventListener('click', onDelegatedClick);
+    document.addEventListener('change', onDelegatedChange);
 
-    document.getElementById('g-name').value = g.name;
-    document.getElementById('g-phone').value = g.phone !== 'Não informado' ? g.phone : '';
-    document.getElementById('g-group').value = g.group;
-    document.getElementById('g-adults').value = g.adults || 0;
-    document.getElementById('g-children').value = g.children || 0;
+    $('btn-export-finance').addEventListener('click', (event) =>
+        exportFinancePdf(event.currentTarget, state, { financeSummary, vendorTotals, allPayments }));
+    $('btn-export-guests').addEventListener('click', (event) =>
+        exportGuestsPdf(event.currentTarget, state, { guestTotals }));
+}
 
-    document.getElementById('drink-beer').value = g.beverages?.beer || 0;
-    document.getElementById('drink-cocktail').value = g.beverages?.cocktail || 0;
-    document.getElementById('drink-soda').value = g.beverages?.soda || 0;
-    document.getElementById('drink-juice').value = g.beverages?.juice || 0;
-    document.getElementById('drink-water').value = g.beverages?.water || 0;
+function closeMenu() {
+    $('sidebar').classList.remove('open');
+    $('scrim').hidden = true;
+    $('btn-menu').setAttribute('aria-expanded', 'false');
+}
 
-    document.getElementById('btn-submit-guest').innerText = "Atualizar Convidado";
-    document.getElementById('btn-cancel-edit-guest').style.display = 'block';
-    document.getElementById('guest-form').scrollIntoView({ behavior: "smooth" });
-};
+async function onDelegatedClick(event) {
+    const trigger = event.target.closest('[data-action]');
+    if (!trigger) return;
+    const { action, id, token } = trigger.dataset;
 
-// Cancelar Edição do Convidado
-document.getElementById('btn-cancel-edit-guest')?.addEventListener('click', () => {
-    editGuestIndex = -1;
-    gForm.reset();
+    if (action === 'edit-vendor') return startVendorEdit(id);
+    if (action === 'edit-guest') return startGuestEdit(id);
 
-    document.getElementById('drink-cocktail').value = 0; document.getElementById('drink-beer').value = 0; document.getElementById('drink-soda').value = 0; document.getElementById('drink-juice').value = 0; document.getElementById('drink-water').value = 0;
-    document.getElementById('g-group').value = "Família"; if (adultsInput) adultsInput.value = 1;
-
-    document.getElementById('btn-submit-guest').innerText = "Adicionar à Lista";
-    document.getElementById('btn-cancel-edit-guest').style.display = 'none';
-});
-
-// Submit: Agora serve para Adicionar E Atualizar
-gForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const novoG = {
-        name: document.getElementById('g-name').value,
-        phone: document.getElementById('g-phone').value || 'Não informado',
-        group: document.getElementById('g-group').value,
-        adults: parseInt(document.getElementById('g-adults').value) || 0,
-        children: parseInt(document.getElementById('g-children').value) || 0,
-        beverages: {
-            cocktail: parseInt(document.getElementById('drink-cocktail').value) || 0,
-            beer: parseInt(document.getElementById('drink-beer').value) || 0,
-            soda: parseInt(document.getElementById('drink-soda').value) || 0,
-            juice: parseInt(document.getElementById('drink-juice').value) || 0,
-            water: parseInt(document.getElementById('drink-water').value) || 0
-        },
-        status: editGuestIndex >= 0 ? guests[editGuestIndex].status : 'Pendente' // Mantém o status original se for edição
-    };
-
-    if (editGuestIndex >= 0) {
-        guests[editGuestIndex] = novoG; // Atualiza o existente
-        editGuestIndex = -1;
-        document.getElementById('btn-submit-guest').innerText = "Adicionar à Lista";
-        document.getElementById('btn-cancel-edit-guest').style.display = 'none';
-    } else {
-        guests.push(novoG); // Adiciona novo
+    if (action === 'delete-vendor') {
+        const vendor = state.vendors.find((v) => v.id === id);
+        if (!confirm(`Excluir "${vendor?.name}" e todas as parcelas dele?`)) return;
+        return mutate(() => db.deleteVendor(id), 'Fornecedor excluído.');
     }
 
-    renderGuests(); renderBebidas(); await salvarNuvem(); gForm.reset();
-    document.getElementById('drink-cocktail').value = 0; document.getElementById('drink-beer').value = 0; document.getElementById('drink-soda').value = 0; document.getElementById('drink-juice').value = 0; document.getElementById('drink-water').value = 0;
-    document.getElementById('g-group').value = "Família"; if (adultsInput) adultsInput.value = 1;
-});
+    if (action === 'delete-guest') {
+        const guest = state.guests.find((g) => g.id === id);
+        if (!confirm(`Remover "${guest?.name}" da lista?`)) return;
+        return mutate(() => db.deleteGuest(id), 'Convidado removido.');
+    }
 
-// ==========================================
-// 6. CHECKLIST
-// ==========================================
-const taskInput = document.getElementById('new-task-input'), btnAddTask = document.getElementById('btn-add-task');
-const renderChecklist = () => {
-    const container = document.getElementById('checklist-container'); if (!container) return;
-    let completed = 0;
-    container.innerHTML = tasks.map((task, index) => {
-        const isDone = (task.status === 'Concluído' || task.status === 'Pago'); if (isDone) completed++;
-        let bColor = 'transparent'; if (task.status === 'Pendente') bColor = '#facc15'; if (task.status === 'Pagando') bColor = '#60a5fa'; if (task.status === 'Pago' || task.status === 'Concluído') bColor = 'var(--success-green)';
-        return `<div class="premium-panel" style="border-left: 4px solid ${bColor}; opacity: ${isDone ? '0.5' : '1'}; display: flex; justify-content: space-between; align-items: center; padding: 1rem; margin-bottom: 10px;"><span style="${isDone ? 'text-decoration: line-through; color: var(--text-muted);' : 'color: var(--text-light);'};">${task.text}</span><div style="display: flex; gap: 10px; align-items: center;"><select onchange="updateTaskStatus(${index}, this.value)" class="premium-input" style="padding: 5px;"><option value="Pendente" ${task.status === 'Pendente' ? 'selected' : ''}>⏳ Pendente</option><option value="Pagando" ${task.status === 'Pagando' ? 'selected' : ''}>💸 Pagando</option><option value="Pago" ${task.status === 'Pago' ? 'selected' : ''}>✅ Pago</option><option value="Concluído" ${task.status === 'Concluído' ? 'selected' : ''}>✅ Concluído</option></select><button onclick="deleteTask(${index})" style="background:none; border:none; color:var(--danger-red); cursor:pointer;">✕</button></div></div>`;
-    }).join('');
-    const percent = tasks.length > 0 ? Math.round((completed / tasks.length) * 100) : 0;
-    document.getElementById('checklist-percent').innerText = `${percent}%`; document.getElementById('checklist-bar').style.width = `${percent}%`;
-};
-window.updateTaskStatus = async (i, newStatus) => { tasks[i].status = newStatus; renderChecklist(); await salvarNuvem(); };
-window.deleteTask = async (i) => { tasks.splice(i, 1); renderChecklist(); await salvarNuvem(); };
-const addTaskEvent = async () => { const txt = taskInput.value.trim(); if (txt) { tasks.push({ text: txt, status: 'Pendente' }); taskInput.value = ''; renderChecklist(); await salvarNuvem(); } };
-if (btnAddTask) btnAddTask.onclick = addTaskEvent; if (taskInput) taskInput.onkeypress = (e) => { if (e.key === 'Enter') addTaskEvent(); };
+    if (action === 'delete-task') return mutate(() => db.deleteTask(id));
+    if (action === 'delete-ros') {
+        if (!confirm('Excluir este momento do roteiro?')) return;
+        return mutate(() => db.deleteRunOfShowItem(id));
+    }
 
-// ==========================================
-// 7. RUN OF SHOW
-// ==========================================
-const renderRos = () => {
-    const container = document.getElementById('ros-timeline'); if (!container) return;
-    rosEvents.sort((a, b) => a.time.localeCompare(b.time)); let html = '<div style="position:absolute; left:80px; top:0; bottom:0; width:2px; background:var(--gold-primary); opacity:0.5;"></div>';
-    rosEvents.forEach((ev, i) => {
-        let bColor = ev.role === 'noiva' ? '#fbcfe8' : (ev.role === 'noivo' ? '#bfdbfe' : 'var(--gold-primary)'), badgeText = ev.role === 'noiva' ? '👰 NOIVA' : (ev.role === 'noivo' ? '🤵 NOIVO' : '💍 AMBOS');
-        html += `<div style="display:flex; align-items:center; margin-bottom:1.5rem; position:relative; z-index:2;"><div style="width:65px; text-align:right; font-family:var(--font-serif); font-size:1.4rem; color:var(--gold-primary); padding-right:15px;">${ev.time}</div><div style="width:14px; height:14px; border-radius:50%; background:var(--gold-primary); position:absolute; left:74px;"></div><div class="premium-panel" style="flex:1; margin-left:35px; border-left: 4px solid ${bColor}; display:flex; justify-content:space-between; align-items:center; padding:1rem;"><div><span style="font-size:0.7rem; padding:3px 8px; background:rgba(255,255,255,0.1); border-radius:4px; color:${bColor};">${badgeText}</span><h4 style="margin:5px 0 0 0;">${ev.desc}</h4></div><button onclick="deleteRos(${i})" style="background:none; border:none; color:var(--danger-red); font-size:1.2rem; cursor:pointer;">✕</button></div></div>`;
-    }); container.innerHTML = html;
-};
-window.deleteRos = async (i) => { if (confirm("Excluir item?")) { rosEvents.splice(i, 1); renderRos(); await salvarNuvem(); } };
-document.getElementById('btn-add-ros')?.addEventListener('click', async () => { const time = document.getElementById('ros-time').value, role = document.getElementById('ros-role').value, desc = document.getElementById('ros-desc').value.trim(); if (time && desc) { rosEvents.push({ time, role, desc }); document.getElementById('ros-desc').value = ''; renderRos(); await salvarNuvem(); } });
+    if (action === 'remove-member') {
+        if (!confirm('Remover o acesso desta pessoa?')) return;
+        return mutate(() => db.removeMember(id), 'Acesso removido.');
+    }
 
-// ==========================================
-// 8. MOTOR DE PDF AWWWARDS
-// ==========================================
-const gerarPdfPremium = (titulo, htmlConteudo, nomeArquivo, btnElement, textoOriginal) => {
-    try {
-        if (typeof html2pdf === 'undefined') { alert("A biblioteca de PDF ainda está carregando. Tente novamente em 2 segundos."); btnElement.innerHTML = textoOriginal; btnElement.style.opacity = '1'; return; }
-        const coupleNames = (userData && userData.nome && userData.nomeConjuge) ? `${userData.nome} & ${userData.nomeConjuge}` : "Planejamento do Casamento";
-        const containerPdf = document.createElement('div');
-        containerPdf.innerHTML = `<style>* { box-sizing: border-box; } .pdf-wrapper { font-family: 'Inter', sans-serif; background: #ffffff; width: 100%; color: #111827; } .pdf-header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #DCA54C; padding-bottom: 20px; } .pdf-header h1 { font-family: 'Playfair Display', serif; color: #B8860B; font-size: 26px; margin: 0 0 8px 0; letter-spacing: -0.5px; } .pdf-header p { font-size: 11px; color: #6B7280; text-transform: uppercase; letter-spacing: 2px; margin: 0; font-weight: 600; } .pdf-summary { display: flex; justify-content: space-between; background: #F8F9FA; border: 1px solid #E5E7EB; border-radius: 8px; padding: 15px 20px; margin-bottom: 30px; flex-wrap: wrap; gap: 10px; } .summary-box { text-align: center; flex: 1; border-right: 1px solid #E5E7EB; min-width: 100px; } .summary-box:last-child { border-right: none; } .summary-box span { display: block; font-size: 10px; text-transform: uppercase; color: #6B7280; letter-spacing: 1px; margin-bottom: 5px; font-weight: 600; } .summary-box strong { font-family: 'Playfair Display', serif; font-size: 22px; color: #111827; } .summary-box.highlight strong { color: #059669; } .pdf-section-title { font-family: 'Playfair Display', serif; color: #DCA54C; font-size: 18px; margin: 25px 0 10px 0; border-bottom: 1px solid #E5E7EB; padding-bottom: 5px; } .pdf-table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 11px; } .pdf-table th { background-color: #F8F9FA; color: #374151; text-transform: uppercase; letter-spacing: 1px; font-size: 9px; padding: 12px 10px; text-align: left; border-top: 1px solid #E5E7EB; border-bottom: 2px solid #D1D5DB; } .pdf-table td { padding: 12px 10px; border-bottom: 1px solid #F3F4F6; color: #6B7280; } .pdf-table td.name-col { font-weight: 600; color: #111827; } .pdf-table td.mono { font-family: monospace; font-size: 10px; } .center { text-align: center !important; } .badge { padding: 4px 8px; border-radius: 4px; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; } .confirmado { background: #D1FAE5; color: #059669; border: 1px solid #A7F3D0; } .pendente { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; } .recusado { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }</style><div class="pdf-wrapper"><div class="pdf-header"><h1>${titulo}</h1><p>${coupleNames} • ${new Date().toLocaleDateString('pt-BR')}</p></div>${htmlConteudo}</div>`;
-        html2pdf().set({ margin: 10, filename: nomeArquivo, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true, letterRendering: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } }).from(containerPdf).save().then(() => { btnElement.innerHTML = '<span class="icon">✅</span> Baixado!'; setTimeout(() => { btnElement.innerHTML = textoOriginal; btnElement.style.opacity = '1'; }, 3000); });
-    } catch (e) { console.error(e); alert("Erro na biblioteca do PDF."); }
-};
+    if (action === 'copy-invite') {
+        try {
+            await navigator.clipboard.writeText(token);
+            toast('Código copiado. Mande para o seu par.', 'success');
+        } catch {
+            prompt('Copie o código do convite:', token);
+        }
+    }
+}
 
-document.getElementById('btn-export-pdf')?.addEventListener('click', () => {
-    const btn = document.getElementById('btn-export-pdf'); const originalText = btn.innerHTML; btn.innerHTML = '<span class="icon">⏳</span> Gerando...'; btn.style.opacity = '0.7';
-    let tA = 0, tC = 0, tConf = 0; guests.forEach(g => { tA += parseInt(g.adults || 0); tC += parseInt(g.children || 0); if (g.status === 'Confirmado') tConf += (parseInt(g.adults || 0) + parseInt(g.children || 0)); });
-    const padrinhos = guests.filter(g => g.group === 'Padrinhos'); const normais = guests.filter(g => g.group !== 'Padrinhos');
-    const gerarLinhas = (lista) => lista.map(g => `<tr><td class="name-col">${g.name}</td><td class="mono">${g.phone || '—'}</td><td>${g.group}</td><td class="center">${g.adults}</td><td class="center">${g.children}</td><td class="center"><span class="badge ${g.status.toLowerCase()}">${g.status}</span></td></tr>`).join('');
-    const conteudo = `<div class="pdf-summary"><div class="summary-box"><span>Geral</span><strong>${tA + tC}</strong></div><div class="summary-box"><span>Adultos</span><strong>${tA}</strong></div><div class="summary-box"><span>Crianças</span><strong>${tC}</strong></div><div class="summary-box highlight"><span>Confirmados</span><strong>${tConf}</strong></div></div>${padrinhos.length > 0 ? `<h3 class="pdf-section-title">💍 Padrinhos</h3><table class="pdf-table"><thead><tr><th>Nome / Família</th><th>Telefone</th><th>Grupo</th><th class="center">Adultos</th><th class="center">Crianças</th><th class="center">Status</th></tr></thead><tbody>${gerarLinhas(padrinhos)}</tbody></table>` : ''}<h3 class="pdf-section-title">💌 Demais Convidados</h3><table class="pdf-table"><thead><tr><th>Nome / Família</th><th>Telefone</th><th>Grupo</th><th class="center">Adultos</th><th class="center">Crianças</th><th class="center">Status</th></tr></thead><tbody>${gerarLinhas(normais)}</tbody></table>`;
-    gerarPdfPremium("Lista Oficial de Convidados", conteudo, "Convidados_WeddingPro.pdf", btn, originalText);
-});
+async function onDelegatedChange(event) {
+    const trigger = event.target.closest('[data-action]');
+    if (!trigger) return;
+    const { action, id } = trigger.dataset;
 
-document.getElementById('btn-export-vendors-pdf')?.addEventListener('click', () => {
-    const btn = document.getElementById('btn-export-vendors-pdf'); const originalText = btn.innerHTML; btn.innerHTML = '<span class="icon">⏳</span> Gerando...'; btn.style.opacity = '0.7';
-    let globalTotal = 0, globalPaid = 0; const monthsMap = {}; const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-    vendors.forEach(v => { globalTotal += parseFloat(v.total || 0); v.payments.forEach(p => { if (p.isPaid) globalPaid += parseFloat(p.amount || 0); if (!p.date) return; const parts = p.date.split('-'); if (parts.length < 2) return; const key = `${parts[0]}-${parts[1]}`; if (!monthsMap[key]) monthsMap[key] = { label: `${monthNames[parseInt(parts[1]) - 1]} ${parts[0]}`, pending: 0 }; if (!p.isPaid) monthsMap[key].pending += parseFloat(p.amount || 0); }); });
-    let monthlyHtml = '<div class="pdf-summary" style="margin-top: 15px; margin-bottom: 30px;">'; Object.keys(monthsMap).sort().forEach(k => { const m = monthsMap[k]; monthlyHtml += `<div class="summary-box"><span>${m.label}</span><strong style="font-size:14px; color:${m.pending === 0 ? '#059669' : '#991B1B'}">Falta: R$ ${m.pending.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div>`; }); monthlyHtml += '</div>';
-    const conteudo = `<div class="pdf-summary" style="margin-bottom: 10px;"><div class="summary-box"><span>Investimento Total</span><strong>R$ ${globalTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div><div class="summary-box highlight"><span>Total Pago</span><strong>R$ ${globalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div><div class="summary-box"><span>Falta Pagar</span><strong style="color:#991B1B;">R$ ${(globalTotal - globalPaid).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div></div><h3 class="pdf-section-title" style="font-size: 14px; margin-top: 10px;">Projeção de Fluxo de Caixa Mensal</h3>${Object.keys(monthsMap).length > 0 ? monthlyHtml : '<p style="font-size: 10px; color: #666;">Nenhuma parcela pendente projetada.</p>'}<table class="pdf-table"><thead><tr><th>Fornecedor</th><th>Forma Pgt.</th><th>Valor Total</th><th>Valor Pago</th><th>Pendente</th></tr></thead><tbody>${vendors.map(v => { let pago = 0; v.payments.forEach(p => { if (p.isPaid) pago += p.amount; }); return `<tr><td class="name-col">${v.name}</td><td>${v.method}</td><td class="mono">R$ ${parseFloat(v.total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td><td class="mono" style="color:#059669;">R$ ${pago.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td><td class="mono" style="color:#991B1B;">R$ ${(parseFloat(v.total || 0) - pago).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td></tr>`; }).join('')}</tbody></table>`;
-    gerarPdfPremium("Relatório Financeiro de Fornecedores", conteudo, "Fornecedores_WeddingPro.pdf", btn, originalText);
-});
+    if (action === 'toggle-payment') {
+        return mutate(() => db.setPaymentPaid(id, trigger.checked));
+    }
+    if (action === 'guest-status') {
+        return mutate(() => db.updateGuest(id, { status: trigger.value }));
+    }
+    if (action === 'task-status') {
+        return mutate(() => db.updateTask(id, { status: trigger.value }));
+    }
+    if (action === 'toggle-honeymoon-item') {
+        setSync('saving');
+        try {
+            await db.setHoneymoonItemDone(id, trigger.checked);
+            state.honeymoon = await db.fetchHoneymoon(state.wedding.honeymoon_trip_id);
+            renderHoneymoon();
+            setSync('ok');
+        } catch (error) {
+            console.error(error);
+            setSync('error');
+            toast('Não foi possível atualizar a lista da viagem.', 'error');
+        }
+    }
+}
 
-document.getElementById('btn-export-drinks-pdf')?.addEventListener('click', () => {
-    const btn = document.getElementById('btn-export-drinks-pdf'); const originalText = btn.innerHTML; btn.innerHTML = '<span class="icon">⏳</span> Gerando...'; btn.style.opacity = '0.7';
-    let totals = { beer: 0, soda: 0, juice: 0, water: 0, cocktail: 0 };
-    guests.forEach(g => { if (g.beverages?.beer) totals.beer += (g.beverages.beer * 1.5); if (g.beverages?.soda) totals.soda += (g.beverages.soda * 0.6); if (g.beverages?.juice) totals.juice += (g.beverages.juice * 0.4); if (g.beverages?.water) totals.water += (g.beverages.water * 0.5); if (g.beverages?.cocktail) totals.cocktail += g.beverages.cocktail; });
-    const conteudo = `<div class="pdf-summary" style="flex-wrap: wrap; gap: 10px;"><div class="summary-box"><span>🍺 Chopp / Cerveja</span><strong>${Math.ceil(totals.beer)} L</strong></div><div class="summary-box"><span>🥤 Refrigerante</span><strong>${Math.ceil(totals.soda)} L</strong></div><div class="summary-box"><span>🧃 Suco Natural</span><strong>${Math.ceil(totals.juice)} L</strong></div><div class="summary-box"><span>💧 Água Mineral</span><strong>${Math.ceil(totals.water)} L</strong></div><div class="summary-box"><span>🍸 Serviço Bar (Drinks)</span><strong>${totals.cocktail} Pessoas</strong></div></div><h3 class="pdf-section-title">Consumo Detalhado da Lista</h3><table class="pdf-table"><thead><tr><th>Nome / Família</th><th class="center">Status</th><th class="center">Qtd Chopp</th><th class="center">Qtd Refri</th><th class="center">Qtd Suco</th><th class="center">Qtd Água</th><th class="center">Qtd Drinks</th></tr></thead><tbody>${guests.map(g => `<tr><td class="name-col">${g.name}</td><td class="center"><span class="badge ${g.status.toLowerCase()}">${g.status}</span></td><td class="center">${g.beverages?.beer || '0'}</td><td class="center">${g.beverages?.soda || '0'}</td><td class="center">${g.beverages?.juice || '0'}</td><td class="center">${g.beverages?.water || '0'}</td><td class="center">${g.beverages?.cocktail || '0'}</td></tr>`).join('')}</tbody></table>`;
-    gerarPdfPremium("Lista de Compras: Bebidas", conteudo, "Bebidas_WeddingPro.pdf", btn, originalText);
-});
+// ---------- Fornecedores ----------
+
+/** Monta o carnê: entrada (se houver) + parcelas mensais do restante. */
+function buildPayments({ total, entry, installments, firstDate }) {
+    const payments = [];
+
+    if (entry > 0) {
+        payments.push({ description: 'Entrada', amount: round2(entry), dueDate: firstDate });
+    }
+
+    const remaining = total - entry;
+    if (installments > 0 && remaining > 0.005) {
+        const base = round2(remaining / installments);
+        for (let i = 1; i <= installments; i += 1) {
+            // A última parcela absorve a sobra dos centavos do arredondamento.
+            const amount = i === installments
+                ? round2(remaining - base * (installments - 1))
+                : base;
+            payments.push({
+                description: `Parcela ${i}/${installments}`,
+                amount,
+                dueDate: addMonths(firstDate, entry > 0 ? i : i - 1)
+            });
+        }
+    }
+
+    return payments;
+}
+
+function round2(value) {
+    return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+/** Identidade do carnê, para detectar se o parcelamento mudou. */
+function scheduleSignature(payments) {
+    return JSON.stringify(
+        (payments ?? []).map((p) => [p.description, round2(p.amount), p.dueDate ?? p.due_date ?? null])
+    );
+}
+
+function readVendorForm() {
+    const total = num($('v-total').value);
+    const entry = num($('v-entry').value);
+    const installments = parseInt($('v-installments').value, 10) || 0;
+    const firstDate = $('v-date').value;
+
+    return {
+        vendor: {
+            name: $('v-name').value.trim(),
+            category: $('v-category').value,
+            payment_method: $('v-method').value.trim() || null,
+            total_amount: total,
+            notes: $('v-notes').value.trim() || null
+        },
+        payments: buildPayments({ total, entry, installments, firstDate }),
+        total,
+        entry
+    };
+}
+
+function wireVendorForm() {
+    const form = $('vendor-form');
+    const hint = $('vendor-form-hint');
+
+    const updateHint = () => {
+        const total = num($('v-total').value);
+        const entry = num($('v-entry').value);
+        const installments = parseInt($('v-installments').value, 10) || 0;
+
+        if (total <= 0) return (hint.textContent = '');
+        if (entry > total) return (hint.textContent = '⚠ A entrada é maior que o valor total.');
+
+        const remaining = total - entry;
+        hint.textContent = installments > 0 && remaining > 0
+            ? `${installments}× de ${money(remaining / installments)}${entry > 0 ? ` após entrada de ${money(entry)}` : ''}.`
+            : entry > 0 ? `Pagamento único de ${money(entry)}.` : '';
+    };
+
+    ['v-total', 'v-entry', 'v-installments'].forEach((id) =>
+        $(id).addEventListener('input', updateHint));
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const { vendor, payments, total, entry } = readVendorForm();
+
+        if (!vendor.name) return toast('Informe o nome do fornecedor.', 'error');
+        if (total <= 0) return toast('Informe um valor total maior que zero.', 'error');
+        if (entry > total) return toast('A entrada não pode passar do valor total.', 'error');
+        if (!payments.length) return toast('Defina a entrada ou o número de parcelas.', 'error');
+
+        const editingId = state.editingVendorId;
+
+        // Regerar o carnê apaga e recria as parcelas; só faz isso se elas
+        // realmente mudaram, para não mexer no que já está lançado à toa.
+        const scheduleChanged = scheduleSignature(payments) !== state.editingVendorSchedule;
+
+        const saved = await mutate(
+            () => editingId
+                ? db.updateVendor(editingId, vendor, scheduleChanged ? payments : null)
+                : db.createVendor(state.wedding.id, vendor, payments),
+            editingId ? 'Fornecedor atualizado.' : 'Fornecedor cadastrado.'
+        );
+
+        if (saved) resetVendorForm();
+    });
+
+    $('btn-cancel-vendor').addEventListener('click', resetVendorForm);
+}
+
+function startVendorEdit(vendorId) {
+    const vendor = state.vendors.find((v) => v.id === vendorId);
+    if (!vendor) return;
+
+    state.editingVendorId = vendorId;
+    state.editingVendorSchedule = scheduleSignature(vendor.payments);
+    const payments = vendor.payments ?? [];
+    const entryPayment = payments.find((p) => p.description === 'Entrada');
+    const installments = payments.filter((p) => p !== entryPayment);
+
+    $('v-name').value = vendor.name;
+    $('v-category').value = vendor.category ?? 'other';
+    $('v-method').value = vendor.payment_method ?? '';
+    $('v-total').value = vendor.total_amount ?? '';
+    $('v-notes').value = vendor.notes ?? '';
+    $('v-entry').value = entryPayment ? entryPayment.amount : '';
+    $('v-installments').value = installments.length;
+    $('v-date').value = payments[0]?.due_date ?? '';
+
+    $('vendor-form-title').textContent = `Editando ${vendor.name}`;
+    $('btn-submit-vendor').textContent = 'Atualizar';
+    $('btn-cancel-vendor').hidden = false;
+    $('vendor-form-hint').textContent = 'As parcelas serão recriadas; as já marcadas como pagas continuam pagas.';
+
+    $('finance').scrollIntoView({ behavior: 'smooth' });
+}
+
+function resetVendorForm() {
+    state.editingVendorId = null;
+    state.editingVendorSchedule = null;
+    $('vendor-form').reset();
+    $('v-installments').value = 1;
+    $('vendor-form-title').textContent = 'Cadastrar fornecedor';
+    $('btn-submit-vendor').textContent = 'Salvar fornecedor';
+    $('btn-cancel-vendor').hidden = true;
+    $('vendor-form-hint').textContent = '';
+}
+
+// ---------- Convidados ----------
+
+function wireGuestForm() {
+    const form = $('guest-form');
+
+    $('g-group').addEventListener('change', (event) => {
+        if (event.target.value === 'Padrinhos') $('g-adults').value = 2;
+    });
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const guest = {
+            name: $('g-name').value.trim(),
+            phone: $('g-phone').value.trim() || null,
+            group_name: $('g-group').value,
+            adults: parseInt($('g-adults').value, 10) || 0,
+            children: parseInt($('g-children').value, 10) || 0,
+            status: $('g-status').value,
+            beverages: {
+                beer: parseInt($('drink-beer').value, 10) || 0,
+                cocktail: parseInt($('drink-cocktail').value, 10) || 0,
+                soda: parseInt($('drink-soda').value, 10) || 0,
+                juice: parseInt($('drink-juice').value, 10) || 0,
+                water: parseInt($('drink-water').value, 10) || 0
+            }
+        };
+
+        if (!guest.name) return toast('Informe o nome.', 'error');
+        if (guest.adults + guest.children < 1) return toast('Informe ao menos uma pessoa.', 'error');
+
+        const editingId = state.editingGuestId;
+        const saved = await mutate(
+            () => editingId
+                ? db.updateGuest(editingId, guest)
+                : db.createGuest(state.wedding.id, guest),
+            editingId ? 'Convidado atualizado.' : 'Convidado adicionado.'
+        );
+
+        if (saved) resetGuestForm();
+    });
+
+    $('btn-cancel-guest').addEventListener('click', resetGuestForm);
+}
+
+function startGuestEdit(guestId) {
+    const guest = state.guests.find((g) => g.id === guestId);
+    if (!guest) return;
+
+    state.editingGuestId = guestId;
+    const drinks = guest.beverages ?? {};
+
+    $('g-name').value = guest.name;
+    $('g-phone').value = guest.phone ?? '';
+    $('g-group').value = guest.group_name;
+    $('g-adults').value = guest.adults;
+    $('g-children').value = guest.children;
+    $('g-status').value = guest.status;
+    $('drink-beer').value = drinks.beer ?? 0;
+    $('drink-cocktail').value = drinks.cocktail ?? 0;
+    $('drink-soda').value = drinks.soda ?? 0;
+    $('drink-juice').value = drinks.juice ?? 0;
+    $('drink-water').value = drinks.water ?? 0;
+
+    $('guest-form-title').textContent = `Editando ${guest.name}`;
+    $('btn-submit-guest').textContent = 'Atualizar';
+    $('btn-cancel-guest').hidden = false;
+    $('guest-form').scrollIntoView({ behavior: 'smooth' });
+}
+
+function resetGuestForm() {
+    state.editingGuestId = null;
+    $('guest-form').reset();
+    $('g-adults').value = 1;
+    $('g-children').value = 0;
+    ['drink-beer', 'drink-cocktail', 'drink-soda', 'drink-juice', 'drink-water']
+        .forEach((id) => { $(id).value = 0; });
+    $('guest-form-title').textContent = 'Adicionar convidado';
+    $('btn-submit-guest').textContent = 'Adicionar';
+    $('btn-cancel-guest').hidden = true;
+}
+
+// ---------- Checklist e roteiro ----------
+
+function wireChecklist() {
+    $('task-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const title = $('new-task').value.trim();
+        if (!title) return;
+
+        const saved = await mutate(() => db.createTask(state.wedding.id, {
+            title,
+            due_date: $('new-task-date').value || null,
+            position: state.tasks.length
+        }));
+
+        if (saved) $('task-form').reset();
+    });
+}
+
+function wireRunOfShow() {
+    $('ros-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const title = $('ros-title').value.trim();
+        const eventTime = $('ros-time').value;
+        if (!title || !eventTime) return;
+
+        const saved = await mutate(() => db.createRunOfShowItem(state.wedding.id, {
+            title,
+            event_time: eventTime,
+            role: $('ros-role').value,
+            position: state.runOfShow.length
+        }));
+
+        if (saved) {
+            $('ros-title').value = '';
+            $('ros-title').focus();
+        }
+    });
+}
+
+// ---------- Configurações ----------
+
+function wireSettings() {
+    $('wedding-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const patch = {
+            partner1_name: $('w-partner1').value.trim(),
+            partner2_name: $('w-partner2').value.trim(),
+            wedding_date: $('w-date').value || null,
+            ceremony_time: $('w-time').value || null,
+            estimated_budget: $('w-budget').value ? num($('w-budget').value) : null,
+            venue: $('w-venue').value.trim() || null,
+            city: $('w-city').value.trim() || null,
+            cover_image_url: $('w-cover').value.trim() || null
+        };
+
+        if (!patch.partner1_name || !patch.partner2_name) {
+            return toast('Preencha os dois nomes.', 'error');
+        }
+
+        await mutate(() => db.updateWedding(state.wedding.id, patch), 'Dados salvos.');
+    });
+
+    $('invite-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const email = $('invite-email').value.trim();
+        if (!email) return;
+
+        const saved = await mutate(
+            () => db.inviteMember(state.wedding.id, email),
+            'Convite gerado. Copie o código e mande para ela.'
+        );
+
+        if (saved) $('invite-form').reset();
+    });
+}
+
+// ==========================================================
+
+boot();

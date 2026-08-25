@@ -4,67 +4,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WeddingPro | Acesso Restrito</title>
+    <title>Nosso Casório</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@400;500;600;700&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="global.css">
     <link rel="stylesheet" href="login.css">
 </head>
 
 <body class="login-body">
-    <main class="login-container">
+    <main class="login-card">
         <header class="login-logo">
-            <h1>WeddingPro</h1>
-            <p>SaaS Premium</p>
+            <span class="login-monogram">&amp;</span>
+            <h1>Nosso Casório</h1>
+            <p id="login-subtitle">Entre para ver os valores e o planejamento</p>
         </header>
 
-        <form id="auth-form" class="auth-form">
-            <h3 id="form-title" class="form-title">Entrar na sua conta</h3>
-
-            <section id="signup-fields" class="signup-fields">
-                <div class="input-group"
-                    style="background: rgba(220, 165, 76, 0.1); padding: 15px; border-radius: 8px; border: 1px dashed var(--gold-primary); margin-bottom: 10px;">
-                    <label style="color: var(--gold-primary);">Chave de Acesso VIP 💎</label>
-                    <input type="text" id="reg-access-key" class="premium-input" placeholder="Insira o código fornecido"
-                        style="border-color: var(--gold-primary);">
-                </div>
-
-                <div class="row-inputs">
-                    <div class="input-group"><label>Seu Nome</label><input type="text" id="reg-name"
-                            class="premium-input" placeholder="Ex: Vinicius"></div>
-                    <div class="input-group"><label>Sobrenome</label><input type="text" id="reg-lastname"
-                            class="premium-input" placeholder="Ex: Silva"></div>
-                </div>
-                <div class="input-group"><label>Nome do Cônjuge</label><input type="text" id="reg-partner"
-                        class="premium-input" placeholder="Ex: Sophia"></div>
-                <div class="row-inputs">
-                    <div class="input-group"><label>Nascimento</label><input type="date" id="reg-birth"
-                            class="premium-input"></div>
-                    <div class="input-group"><label>Data do Casamento</label><input type="date" id="reg-wedding"
-                            class="premium-input"></div>
-                </div>
-                <hr class="form-divider">
-            </section>
-
-            <div class="input-group"><label>E-mail de Acesso</label><input type="email" id="auth-email"
-                    class="premium-input" placeholder="seu@email.com" required></div>
+        <form id="auth-form" class="auth-form" novalidate>
+            <div class="input-group">
+                <label for="auth-email">E-mail</label>
+                <input type="email" id="auth-email" class="input" placeholder="voce@email.com" required
+                    autocomplete="email">
+            </div>
 
             <div class="input-group">
-                <label>Senha</label>
+                <label for="auth-password">Senha</label>
                 <div class="password-wrapper">
-                    <input type="password" id="auth-password" class="premium-input" placeholder="Mínimo 6 caracteres"
-                        required minlength="6">
-                    <button type="button" id="toggle-password" class="toggle-password-btn" tabindex="-1">VER</button>
+                    <input type="password" id="auth-password" class="input" placeholder="Mínimo 6 caracteres" required
+                        minlength="6" autocomplete="current-password">
+                    <button type="button" id="toggle-password" class="toggle-password-btn" tabindex="-1"
+                        aria-label="Mostrar senha">Ver</button>
                 </div>
             </div>
 
-            <button type="submit" id="auth-submit" class="btn-primary">Entrar</button>
+            <p id="auth-feedback" class="auth-feedback" role="status" aria-live="polite"></p>
+
+            <button type="submit" id="auth-submit" class="btn btn-primary btn-block">Entrar</button>
         </form>
 
-        <footer class="toggle-form" id="toggle-auth-mode">
-            Tem uma licença? <strong>Cadastre-se aqui</strong>
-        </footer>
+        <div class="login-actions">
+            <button type="button" id="btn-forgot" class="link-btn">Esqueci minha senha</button>
+            <button type="button" id="toggle-auth-mode" class="link-btn">Criar uma conta</button>
+        </div>
     </main>
 
     <script type="module" src="auth.js"></script>

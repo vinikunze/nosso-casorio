@@ -1,167 +1,401 @@
+/* ==========================================================
+   Nosso Casório — base e sistema de design
+   ========================================================== */
+
 :root {
-    /* Paleta Premium Dark Solid */
-    --gold-primary: #DCA54C;
-    --gold-light: #F2C94C;
-    --gold-dark: #B8860B;
+    /* Superfícies */
+    --bg-deep: #0b0a0f;
+    --bg-base: #12111a;
+    --surface: rgba(255, 255, 255, 0.035);
+    --surface-strong: rgba(255, 255, 255, 0.06);
+    --border: rgba(255, 255, 255, 0.09);
+    --border-strong: rgba(255, 255, 255, 0.16);
 
-    --navy-deep: #0A111E;
-    --navy-panel: #111A2E;
-    --navy-input: #050914;
+    /* Dourado */
+    --gold: #d9b169;
+    --gold-soft: #e8cf9b;
+    --gold-dim: rgba(217, 177, 105, 0.16);
 
-    --text-light: #F0F2F5;
-    --text-muted: #8D99AE;
+    /* Texto */
+    --text: #f3f1ee;
+    --text-muted: #9a94a6;
+    --text-faint: #6c6678;
 
-    --success-green: #2ecc71;
-    --danger-red: #ff4d4f;
-    --accent-blue: #3b82f6;
-
-    --panel-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-    --glass-border: rgba(255, 255, 255, 0.05);
+    /* Semânticas */
+    --success: #4ade80;
+    --success-dim: rgba(74, 222, 128, 0.14);
+    --danger: #f87171;
+    --danger-dim: rgba(248, 113, 113, 0.14);
+    --warning: #fbbf24;
+    --warning-dim: rgba(251, 191, 36, 0.14);
+    --info: #7dd3fc;
+    --info-dim: rgba(125, 211, 252, 0.14);
 
     /* Tipografia */
-    --font-sans: 'Inter', sans-serif;
-    --font-serif: 'Playfair Display', serif;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+
+    /* Forma */
+    --radius-sm: 8px;
+    --radius: 14px;
+    --radius-lg: 20px;
+    --shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
 }
 
-* {
-    margin: 0;
-    padding: 0;
+*,
+*::before,
+*::after {
     box-sizing: border-box;
 }
 
+/* Regras de layout como display:flex/grid venceriam o [hidden] do navegador. */
+[hidden] {
+    display: none !important;
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+}
+
 body {
+    margin: 0;
+    min-height: 100vh;
     font-family: var(--font-sans);
-    color: var(--text-light);
-    background: var(--navy-deep);
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--text);
+    background: var(--bg-deep);
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
 }
 
-/* ==========================================
-   ANIMAÇÕES GLOBAIS
-   ========================================== */
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(15px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+h1,
+h2,
+h3,
+h4 {
+    margin: 0;
+    font-weight: 600;
+    line-height: 1.2;
 }
 
-/* ==========================================
-   ELEMENTOS REUTILIZÁVEIS E BOTÕES
-   ========================================== */
-.btn-primary {
-    background: var(--gold-primary);
-    color: #000;
-    padding: 0.8rem 1.5rem;
-    border-radius: 6px;
-    border: none;
-    font-weight: 700;
-    font-family: var(--font-sans);
-    cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+p {
+    margin: 0;
+}
+
+a {
+    color: var(--gold);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+/* ---------- Formulários ---------- */
+
+label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.input,
+select.input,
+textarea.input {
+    width: 100%;
+    padding: 11px 14px;
+    font-family: inherit;
+    font-size: 0.95rem;
+    color: var(--text);
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.input::placeholder {
+    color: var(--text-faint);
+}
+
+.input:focus {
+    outline: none;
+    border-color: var(--gold);
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+select.input {
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+        linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+    background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 34px;
+}
+
+select.input option {
+    background: var(--bg-base);
+    color: var(--text);
+}
+
+/* Deixa o seletor de data legível no tema escuro */
+input[type="date"].input,
+input[type="time"].input {
+    color-scheme: dark;
+}
+
+.input-group {
+    margin-bottom: 16px;
+}
+
+.input-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 14px;
+}
+
+/* ---------- Botões ---------- */
+
+.btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    font-size: 0.9rem;
-}
-
-.btn-primary:hover {
-    background: var(--gold-light);
-    transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(220, 165, 76, 0.2);
-}
-
-/* ==========================================
-   INPUTS E FORMULÁRIOS
-   ========================================== */
-.premium-input {
-    background: var(--navy-input);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: #fff;
-    padding: 0.8rem 1rem;
-    border-radius: 6px;
-    outline: none;
-    transition: 0.3s;
-    font-family: var(--font-sans);
-    width: 100%;
-    font-size: 0.9rem;
-}
-
-.premium-input:focus {
-    border-color: var(--gold-primary);
-}
-
-.premium-input::placeholder {
-    color: rgba(255, 255, 255, 0.3);
-}
-
-.control-group label {
-    display: block;
-    font-size: 0.7rem;
-    color: var(--gold-primary);
-    text-transform: uppercase;
-    margin-bottom: 6px;
-    letter-spacing: 1px;
+    padding: 11px 20px;
+    font-family: inherit;
+    font-size: 0.88rem;
     font-weight: 600;
+    color: var(--text);
+    background: var(--surface-strong);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
 }
 
-/* ==========================================
-   DIVISORES E STATUS
-   ========================================== */
-.section-divider {
+.btn:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    transform: translateY(-1px);
+}
+
+.btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    color: #1a1408;
+    background: linear-gradient(135deg, var(--gold-soft), var(--gold));
+    border-color: transparent;
+}
+
+.btn-primary:hover:not(:disabled) {
+    box-shadow: 0 8px 22px rgba(217, 177, 105, 0.28);
+}
+
+.btn-ghost {
+    background: transparent;
+    color: var(--gold);
+    border-color: var(--gold-dim);
+}
+
+.btn-danger {
+    background: transparent;
+    color: var(--danger);
+    border-color: var(--danger-dim);
+}
+
+.btn-block {
+    width: 100%;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 0.78rem;
+}
+
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+
+.icon-btn:hover {
+    background: var(--surface-strong);
+}
+
+.icon-btn.edit:hover {
+    color: var(--gold);
+}
+
+.icon-btn.delete:hover {
+    color: var(--danger);
+}
+
+.link-btn {
+    padding: 4px 2px;
+    font-family: inherit;
+    font-size: 0.84rem;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+
+.link-btn:hover {
+    color: var(--gold);
+    text-decoration: underline;
+}
+
+/* ---------- Superfícies ---------- */
+
+.panel {
+    padding: 22px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.panel-title {
+    margin-bottom: 18px;
     font-family: var(--font-serif);
-    color: var(--gold-primary);
-    font-size: 1.4rem;
-    margin-bottom: 1rem;
-    border-bottom: 1px solid var(--glass-border);
-    padding-bottom: 8px;
-    display: block;
-    margin-top: 2rem;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--gold-soft);
 }
 
-.confirmado {
-    color: var(--success-green) !important;
+/* ---------- Utilitários ---------- */
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    border-radius: 999px;
+    white-space: nowrap;
 }
 
-.pendente {
-    color: #f1c40f !important;
+.badge.success {
+    color: var(--success);
+    background: var(--success-dim);
 }
 
-.recusado {
-    color: var(--danger-red) !important;
+.badge.danger {
+    color: var(--danger);
+    background: var(--danger-dim);
 }
 
-/* ==========================================
-   BARRA DE ROLAGEM AWWWARDS (CORRIGIDA)
-   ========================================== */
-::-webkit-scrollbar {
-    width: 6px;
+.badge.warning {
+    color: var(--warning);
+    background: var(--warning-dim);
+}
+
+.badge.info {
+    color: var(--info);
+    background: var(--info-dim);
+}
+
+.badge.neutral {
+    color: var(--text-muted);
+    background: var(--surface-strong);
+}
+
+.progress-track {
     height: 6px;
-    /* Impede a barra horizontal grossa caso ela surja */
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--gold), var(--gold-soft));
+    border-radius: 999px;
+    transition: width 0.4s ease;
+}
+
+.progress-fill.done {
+    background: linear-gradient(90deg, #22c55e, var(--success));
+}
+
+.empty-state {
+    padding: 28px 18px;
+    font-size: 0.9rem;
+    color: var(--text-faint);
+    text-align: center;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+}
+
+.money {
+    font-variant-numeric: tabular-nums;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ---------- Barra de rolagem ---------- */
+
+::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
 }
 
 ::-webkit-scrollbar-track {
     background: transparent;
-    /* Fundo invisível para não conflitar */
-    border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--gold-dark);
-    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.13);
+    border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--gold-primary);
+    background: rgba(255, 255, 255, 0.22);
 }
 
-::-webkit-scrollbar-corner {
-    background: transparent;
-    /* Remove quadrados brancos nos cantos */
+@media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
 }

@@ -1,74 +1,126 @@
 import { supabase } from './supabase.js';
 
-let isLogin = true;
-const toggleBtn = document.getElementById('toggle-auth-mode');
-const signupFields = document.getElementById('signup-fields');
-const formTitle = document.getElementById('form-title');
-const submitBtn = document.getElementById('auth-submit');
-
-const togglePasswordBtn = document.getElementById('toggle-password');
+const form = document.getElementById('auth-form');
+const emailInput = document.getElementById('auth-email');
 const passwordInput = document.getElementById('auth-password');
-if (togglePasswordBtn && passwordInput) {
-    togglePasswordBtn.addEventListener('click', () => {
-        const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
-        passwordInput.setAttribute('type', type);
-        togglePasswordBtn.innerText = type === 'password' ? 'VER' : 'OCULTAR';
-    });
+const submitBtn = document.getElementById('auth-submit');
+const toggleModeBtn = document.getElementById('toggle-auth-mode');
+const forgotBtn = document.getElementById('btn-forgot');
+const subtitle = document.getElementById('login-subtitle');
+const feedback = document.getElementById('auth-feedback');
+const togglePasswordBtn = document.getElementById('toggle-password');
+
+let mode = 'login';
+
+// Quem já está logado não precisa ver o login de novo.
+supabase.auth.getSession().then(({ data: { session } }) => {
+    if (session) window.location.replace('dashboard.html');
+});
+
+function showFeedback(message, kind = 'error') {
+    feedback.textContent = message;
+    feedback.className = `auth-feedback is-visible ${kind}`;
 }
 
-toggleBtn?.addEventListener('click', () => {
-    isLogin = !isLogin;
-    signupFields.style.display = isLogin ? 'none' : 'flex';
-    formTitle.innerText = isLogin ? 'Entrar na sua conta' : 'Criar nova conta VIP';
-    submitBtn.innerText = isLogin ? 'Entrar' : 'Validar Chave e Cadastrar';
-    toggleBtn.innerHTML = isLogin ? 'Tem uma licença? <strong>Cadastre-se aqui</strong>' : 'Já tem conta? <strong>Entre</strong>';
+function clearFeedback() {
+    feedback.textContent = '';
+    feedback.className = 'auth-feedback';
+}
+
+function setBusy(busy, label) {
+    submitBtn.disabled = busy;
+    submitBtn.textContent = busy ? 'Aguarde...' : label;
+}
+
+togglePasswordBtn?.addEventListener('click', () => {
+    const isHidden = passwordInput.type === 'password';
+    passwordInput.type = isHidden ? 'text' : 'password';
+    togglePasswordBtn.textContent = isHidden ? 'Ocultar' : 'Ver';
+    togglePasswordBtn.setAttribute('aria-label', isHidden ? 'Ocultar senha' : 'Mostrar senha');
 });
 
-document.getElementById('auth-form')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const email = document.getElementById('auth-email').value.trim();
-    const password = document.getElementById('auth-password').value;
+toggleModeBtn?.addEventListener('click', () => {
+    mode = mode === 'login' ? 'signup' : 'login';
+    clearFeedback();
 
-    submitBtn.innerText = "Processando..."; submitBtn.style.opacity = "0.7";
-
-    if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-            alert("Erro ao entrar. Verifique credenciais.");
-            submitBtn.innerText = "Entrar"; submitBtn.style.opacity = "1";
-        } else { window.location.href = 'dashboard.html'; }
+    if (mode === 'signup') {
+        subtitle.textContent = 'Crie sua conta e peça o código de convite para o seu par';
+        submitBtn.textContent = 'Criar conta';
+        toggleModeBtn.textContent = 'Já tenho conta';
+        passwordInput.autocomplete = 'new-password';
     } else {
-        const accessKey = document.getElementById('reg-access-key').value.trim();
-        if (!accessKey) {
-            alert("⚠️ Você precisa de uma Chave de Acesso para se cadastrar.");
-            submitBtn.innerText = "Validar Chave e Cadastrar"; submitBtn.style.opacity = "1"; return;
-        }
-
-        const { data: keyData, error: keyError } = await supabase.from('access_keys').select('*').eq('key_code', accessKey).single();
-        if (keyError || !keyData || keyData.is_active === false) {
-            alert("❌ Chave de Acesso inválida ou já utilizada.");
-            submitBtn.innerText = "Validar Chave e Cadastrar"; submitBtn.style.opacity = "1"; return;
-        }
-
-        const nome = document.getElementById('reg-name').value;
-        const sobrenome = document.getElementById('reg-lastname').value;
-        const conjuge = document.getElementById('reg-partner').value;
-        const nascimento = document.getElementById('reg-birth').value;
-        const casamento = document.getElementById('reg-wedding').value;
-
-        const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
-        if (authError) {
-            alert("Erro: " + authError.message);
-            submitBtn.innerText = "Validar Chave e Cadastrar"; submitBtn.style.opacity = "1"; return;
-        }
-
-        if (authData.user) {
-            await supabase.from('access_keys').update({ is_active: false, used_by: email }).eq('key_code', accessKey);
-            await supabase.from('users').insert([{
-                id: authData.user.id, nome: nome, sobrenome: sobrenome, nomeConjuge: conjuge,
-                dataNascimento: nascimento, dataCasamento: casamento, email: email, dataCriacao: new Date().toISOString()
-            }]);
-            window.location.href = 'dashboard.html';
-        }
+        subtitle.textContent = 'Entre para ver os valores e o planejamento';
+        submitBtn.textContent = 'Entrar';
+        toggleModeBtn.textContent = 'Criar uma conta';
+        passwordInput.autocomplete = 'current-password';
     }
 });
+
+forgotBtn?.addEventListener('click', async () => {
+    const email = emailInput.value.trim();
+    if (!email) {
+        showFeedback('Digite seu e-mail acima para receber o link de redefinição.');
+        emailInput.focus();
+        return;
+    }
+
+    forgotBtn.disabled = true;
+    const redirectTo = new URL('index.html', window.location.href).href;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    forgotBtn.disabled = false;
+
+    if (error) showFeedback(traduzErro(error));
+    else showFeedback('Enviamos um link de redefinição para o seu e-mail.', 'success');
+});
+
+form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFeedback();
+
+    const email = emailInput.value.trim();
+    const password = passwordInput.value;
+
+    if (!email || password.length < 6) {
+        showFeedback('Informe o e-mail e uma senha de pelo menos 6 caracteres.');
+        return;
+    }
+
+    const label = mode === 'login' ? 'Entrar' : 'Criar conta';
+    setBusy(true, label);
+
+    if (mode === 'login') {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        setBusy(false, label);
+        if (error) showFeedback(traduzErro(error));
+        else window.location.href = 'dashboard.html';
+        return;
+    }
+
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    setBusy(false, label);
+
+    if (error) {
+        showFeedback(traduzErro(error));
+        return;
+    }
+
+    // Com confirmação de e-mail ligada, o signUp não devolve sessão.
+    if (data.session) {
+        window.location.href = 'dashboard.html';
+    } else {
+        showFeedback('Conta criada. Confirme o e-mail que enviamos e depois entre por aqui.', 'success');
+    }
+});
+
+function traduzErro(error) {
+    const raw = (error?.message || '').toLowerCase();
+
+    if (raw.includes('invalid login credentials')) return 'E-mail ou senha incorretos.';
+    if (raw.includes('email not confirmed')) return 'Confirme seu e-mail antes de entrar.';
+    if (raw.includes('user already registered')) return 'Esse e-mail já tem conta. Tente entrar.';
+    if (raw.includes('password should be')) return 'A senha precisa ter pelo menos 6 caracteres.';
+    if (raw.includes('rate limit') || raw.includes('too many')) return 'Muitas tentativas. Espere um minuto e tente de novo.';
+    if (raw.includes('failed to fetch')) return 'Sem conexão com o servidor. Verifique a internet.';
+
+    return error?.message || 'Não foi possível concluir. Tente novamente.';
+}
