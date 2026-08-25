@@ -58,9 +58,15 @@ na hora.
 - **Parcelas.** Ao cadastrar um fornecedor você informa o total, a entrada e o
   número de parcelas; o carnê é gerado com vencimento mensal. A última parcela
   absorve a sobra dos centavos, então a soma sempre fecha com o total exato.
+- **Ajustar uma parcela sozinha.** O vencimento e o valor de cada parcela são
+  editáveis direto na lista — útil quando um fornecedor cobra em meses fora da
+  sequência mensal. A lista se reordena por data de vencimento depois do
+  ajuste. Se as parcelas deixarem de somar o total do contrato, aparece um
+  aviso com a diferença em vez de a divergência passar batida.
 - **Editar fornecedor.** Mudar nome, categoria ou observação não mexe nas
-  parcelas. O carnê só é regerado se o parcelamento realmente mudar — e mesmo
-  aí as parcelas já marcadas como pagas continuam pagas.
+  parcelas, e os ajustes manuais de data e valor continuam de pé. O carnê só é
+  regerado se você mexer em valor total, entrada, nº de parcelas ou 1º
+  vencimento — e mesmo aí as parcelas já marcadas como pagas continuam pagas.
 - **Bebidas.** A estimativa considera só quem confirmou presença, com 1,5 L de
   cerveja, 0,6 L de refrigerante, 0,4 L de suco e 0,5 L de água por pessoa
   marcada.

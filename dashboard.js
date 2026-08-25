@@ -14,7 +14,7 @@ const state = {
     runOfShow: [],
     honeymoon: null,
     editingVendorId: null,
-    editingVendorSchedule: null,
+    editingVendorInputs: null,
     editingGuestId: null,
     countdownTimer: null,
     unsubscribe: null,
@@ -576,12 +576,30 @@ function renderVendorCard(vendor) {
                            aria-label="Marcar ${escapeHtml(payment.description)} como pago">
                     <div class="payment-desc">
                         <strong>${escapeHtml(payment.description)}</strong>
-                        <small>${formatDate(payment.due_date)}${overdue ? ' · atrasado' : ''}</small>
+                        <div class="payment-fields">
+                            <input type="date" class="cell-input cell-date" value="${payment.due_date ?? ''}"
+                                   data-action="payment-date" data-id="${payment.id}"
+                                   aria-label="Vencimento de ${escapeHtml(payment.description)}">
+                            ${overdue ? '<span class="badge danger">Atrasado</span>' : ''}
+                        </div>
                     </div>
                 </div>
-                <span class="payment-amount">${money(payment.amount)}</span>
+                <div class="payment-value">
+                    <span class="currency-prefix">R$</span>
+                    <input type="number" class="cell-input cell-amount" min="0" step="0.01"
+                           value="${num(payment.amount).toFixed(2)}"
+                           data-action="payment-amount" data-id="${payment.id}"
+                           aria-label="Valor de ${escapeHtml(payment.description)}">
+                </div>
             </div>`;
     }).join('');
+
+    // Mexer numa parcela pode desencontrar a soma do contrato — avisa em vez de esconder.
+    const drift = totals.scheduled - totals.contracted;
+    const driftNote = Math.abs(drift) > 0.005
+        ? `<p class="schedule-drift">As parcelas somam ${money(totals.scheduled)}, ${drift > 0 ? 'acima' : 'abaixo'}
+             do total do contrato (${money(totals.contracted)}). Diferença de ${money(Math.abs(drift))}.</p>`
+        : '';
 
     return `
         <article class="vendor-card ${totals.settled ? 'settled' : ''}">
@@ -612,6 +630,7 @@ function renderVendorCard(vendor) {
             </div>
 
             ${payments || '<p class="empty-state">Sem parcelas lançadas.</p>'}
+            ${driftNote}
         </article>`;
 }
 
@@ -1065,6 +1084,14 @@ async function onDelegatedChange(event) {
     if (action === 'toggle-payment') {
         return mutate(() => db.setPaymentPaid(id, trigger.checked));
     }
+    if (action === 'payment-date') {
+        return mutate(() => db.updatePayment(id, { due_date: trigger.value || null }));
+    }
+    if (action === 'payment-amount') {
+        const amount = num(trigger.value);
+        if (amount < 0) return toast('O valor não pode ser negativo.', 'error');
+        return mutate(() => db.updatePayment(id, { amount: round2(amount) }));
+    }
     if (action === 'guest-status') {
         return mutate(() => db.updateGuest(id, { status: trigger.value }));
     }
@@ -1119,11 +1146,18 @@ function round2(value) {
     return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 }
 
-/** Identidade do carnê, para detectar se o parcelamento mudou. */
-function scheduleSignature(payments) {
-    return JSON.stringify(
-        (payments ?? []).map((p) => [p.description, round2(p.amount), p.dueDate ?? p.due_date ?? null])
-    );
+/**
+ * Os campos que definem o carnê. Comparamos ESTES valores — e não o carnê
+ * gerado a partir deles — porque as parcelas podem ter sido ajustadas à mão
+ * depois; regerar por causa dessa diferença apagaria os ajustes.
+ */
+function scheduleInputs() {
+    return JSON.stringify([
+        num($('v-total').value),
+        num($('v-entry').value),
+        parseInt($('v-installments').value, 10) || 0,
+        $('v-date').value
+    ]);
 }
 
 function readVendorForm() {
@@ -1178,9 +1212,9 @@ function wireVendorForm() {
 
         const editingId = state.editingVendorId;
 
-        // Regerar o carnê apaga e recria as parcelas; só faz isso se elas
-        // realmente mudaram, para não mexer no que já está lançado à toa.
-        const scheduleChanged = scheduleSignature(payments) !== state.editingVendorSchedule;
+        // Regerar o carnê apaga e recria as parcelas. Só faz isso se o
+        // parcelamento em si mudou; ajustes manuais de data e valor ficam de pé.
+        const scheduleChanged = scheduleInputs() !== state.editingVendorInputs;
 
         const saved = await mutate(
             () => editingId
@@ -1200,7 +1234,6 @@ function startVendorEdit(vendorId) {
     if (!vendor) return;
 
     state.editingVendorId = vendorId;
-    state.editingVendorSchedule = scheduleSignature(vendor.payments);
     const payments = vendor.payments ?? [];
     const entryPayment = payments.find((p) => p.description === 'Entrada');
     const installments = payments.filter((p) => p !== entryPayment);
@@ -1214,17 +1247,23 @@ function startVendorEdit(vendorId) {
     $('v-installments').value = installments.length;
     $('v-date').value = payments[0]?.due_date ?? '';
 
+    // Guarda o estado inicial dos campos: se nenhum deles mudar, o carnê
+    // fica intacto, preservando datas e valores ajustados na mão.
+    state.editingVendorInputs = scheduleInputs();
+
     $('vendor-form-title').textContent = `Editando ${vendor.name}`;
     $('btn-submit-vendor').textContent = 'Atualizar';
     $('btn-cancel-vendor').hidden = false;
-    $('vendor-form-hint').textContent = 'As parcelas serão recriadas; as já marcadas como pagas continuam pagas.';
+    $('vendor-form-hint').textContent =
+        'Mexer em valor total, entrada, nº de parcelas ou 1º vencimento recria o carnê inteiro. '
+        + 'Para ajustar só uma parcela, edite direto na lista abaixo.';
 
     $('finance').scrollIntoView({ behavior: 'smooth' });
 }
 
 function resetVendorForm() {
     state.editingVendorId = null;
-    state.editingVendorSchedule = null;
+    state.editingVendorInputs = null;
     $('vendor-form').reset();
     $('v-installments').value = 1;
     $('vendor-form-title').textContent = 'Cadastrar fornecedor';
