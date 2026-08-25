@@ -622,6 +622,89 @@ body {
     white-space: nowrap;
 }
 
+/* Campos editáveis dentro da linha da parcela: discretos até receberem foco. */
+.payment-fields {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 3px;
+}
+
+.cell-input {
+    padding: 3px 6px;
+    font-family: inherit;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.cell-input:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--border);
+}
+
+.cell-input:focus {
+    outline: none;
+    color: var(--text);
+    background: rgba(0, 0, 0, 0.45);
+    border-color: var(--gold);
+}
+
+.cell-date {
+    color-scheme: dark;
+    min-width: 128px;
+}
+
+.payment-value {
+    position: relative;
+    white-space: nowrap;
+}
+
+/* O "R$" mora dentro da caixa do campo, à esquerda do valor. */
+.currency-prefix {
+    position: absolute;
+    top: 50%;
+    left: 8px;
+    font-size: 0.78rem;
+    color: var(--text-faint);
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+.cell-amount {
+    width: 116px;
+    padding-left: 30px;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--text);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Esconde as setinhas do input numérico, que atrapalham mais do que ajudam. */
+.cell-amount::-webkit-outer-spin-button,
+.cell-amount::-webkit-inner-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+}
+
+.cell-amount {
+    -moz-appearance: textfield;
+}
+
+.schedule-drift {
+    padding: 9px 12px;
+    margin-top: 10px;
+    font-size: 0.8rem;
+    color: var(--warning);
+    background: var(--warning-dim);
+    border-radius: var(--radius-sm);
+}
+
 /* ---------- Fluxo de caixa ---------- */
 
 .cashflow-grid {

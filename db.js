@@ -207,6 +207,12 @@ export async function setPaymentPaid(paymentId, isPaid) {
     if (error) throw error;
 }
 
+/** Ajuste manual de uma parcela (vencimento, valor ou descrição). */
+export async function updatePayment(paymentId, patch) {
+    const { error } = await supabase.from('vendor_payments').update(patch).eq('id', paymentId);
+    if (error) throw error;
+}
+
 // ---------------------------------------------------------
 // Convidados
 // ---------------------------------------------------------
