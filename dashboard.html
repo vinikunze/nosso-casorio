@@ -4,278 +4,459 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WeddingPro | Dashboard Premium</title>
+    <title>Nosso Casório | Painel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@400;500;600;700&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="global.css">
     <link rel="stylesheet" href="dashboard.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 
 <body>
-    <div id="dynamic-bg" class="dynamic-bg"></div>
-    <div class="overlay-dark"></div>
+    <!-- Carregando -->
+    <div id="boot-screen" class="boot-screen">
+        <div class="boot-monogram">&amp;</div>
+        <p>Carregando o planejamento...</p>
+    </div>
 
-    <div class="app-container">
-        <aside class="sidebar">
-            <header class="logo">
-                <h1 id="sidebar-names-display">Carregando...</h1>
-                <span class="logo-subtitle">SaaS Premium</span>
-            </header>
-            <nav class="sidebar-nav">
-                <button class="nav-btn active" data-target="overview"><span class="icon">⏱️</span><span
-                        class="text">Visão Geral</span></button>
-                <button class="nav-btn" data-target="vendors"><span class="icon">💼</span><span
-                        class="text">Fornecedores</span></button>
-                <button class="nav-btn" data-target="guests"><span class="icon">💌</span><span
-                        class="text">Convidados</span></button>
-                <button class="nav-btn" data-target="drinks-tab"><span class="icon">🥂</span><span
-                        class="text">Bebidas</span></button>
-                <button class="nav-btn" data-target="checklist"><span class="icon">✅</span><span
-                        class="text">Checklist</span></button>
-                <button class="nav-btn" data-target="runofshow"><span class="icon">📜</span><span
-                        class="text">Cronograma</span></button>
+    <!-- Sem casamento vinculado ainda -->
+    <div id="gate-screen" class="gate-screen" hidden>
+        <div class="gate-card">
+            <h1>Quase lá</h1>
+            <p class="gate-intro">Sua conta ainda não está ligada a um casamento.</p>
+
+            <section class="gate-block">
+                <h2>Tenho um código de convite</h2>
+                <div class="input-group">
+                    <label for="invite-code">Código recebido do seu par</label>
+                    <input type="text" id="invite-code" class="input" placeholder="Cole o código aqui">
+                </div>
+                <button type="button" id="btn-accept-invite" class="btn btn-primary btn-block">Entrar no
+                    casamento</button>
+            </section>
+
+            <div class="gate-divider"><span>ou</span></div>
+
+            <section class="gate-block">
+                <h2>Começar um casamento novo</h2>
+                <div class="input-row">
+                    <div class="input-group">
+                        <label for="new-partner1">Seu nome</label>
+                        <input type="text" id="new-partner1" class="input" placeholder="Ex: Vinicius">
+                    </div>
+                    <div class="input-group">
+                        <label for="new-partner2">Nome do seu par</label>
+                        <input type="text" id="new-partner2" class="input" placeholder="Ex: Sophia">
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label for="new-date">Data do casamento</label>
+                    <input type="date" id="new-date" class="input">
+                </div>
+                <button type="button" id="btn-create-wedding" class="btn btn-block">Criar</button>
+            </section>
+
+            <p id="gate-feedback" class="auth-feedback" role="status" aria-live="polite"></p>
+            <button type="button" id="btn-gate-logout" class="link-btn gate-logout">Sair da conta</button>
+        </div>
+    </div>
+
+    <!-- Aplicação -->
+    <div id="app" class="app" hidden>
+        <button type="button" id="btn-menu" class="menu-toggle" aria-label="Abrir menu" aria-expanded="false">
+            <span></span><span></span><span></span>
+        </button>
+
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-head">
+                <span class="sidebar-monogram">&amp;</span>
+                <h1 id="couple-names" class="sidebar-names">Nosso Casório</h1>
+                <p id="wedding-subtitle" class="sidebar-sub">—</p>
+            </div>
+
+            <nav class="nav">
+                <button class="nav-btn active" data-target="overview"><span class="nav-icon">◆</span> Visão
+                    geral</button>
+                <button class="nav-btn" data-target="finance"><span class="nav-icon">$</span> Valores</button>
+                <button class="nav-btn" data-target="guests"><span class="nav-icon">♥</span> Convidados</button>
+                <button class="nav-btn" data-target="checklist"><span class="nav-icon">✓</span> Checklist</button>
+                <button class="nav-btn" data-target="runofshow"><span class="nav-icon">◷</span> Roteiro do
+                    dia</button>
+                <button class="nav-btn" data-target="honeymoon"><span class="nav-icon">✈</span> Lua de mel</button>
+                <button class="nav-btn" data-target="settings"><span class="nav-icon">⚙</span> Configurações</button>
             </nav>
-            <footer class="sidebar-footer">
-                <button id="btn-logout" class="nav-btn"><span class="icon">👋</span><span class="text">Sair do
-                        Sistema</span></button>
-            </footer>
+
+            <div class="sidebar-foot">
+                <span id="sync-status" class="sync-status">Sincronizado</span>
+                <button type="button" id="btn-logout" class="link-btn">Sair</button>
+            </div>
         </aside>
 
+        <div id="scrim" class="scrim" hidden></div>
+
         <main class="content">
-            <section id="overview" class="tab-content active">
-                <header class="premium-header">
-                    <h2 class="main-title">A Jornada até o Altar</h2>
+
+            <!-- ============ VISÃO GERAL ============ -->
+            <section id="overview" class="tab active">
+                <header class="tab-head">
+                    <h2 class="tab-title">Visão geral</h2>
+                    <p class="tab-sub">Onde o dinheiro está e o que vem pela frente.</p>
                 </header>
-                <div class="premium-panel" style="margin-bottom: 2rem;">
-                    <div class="form-grid form-grid-3">
-                        <div class="control-group"><label>Nomes</label><input type="text" id="names-input"
-                                class="premium-input"></div>
-                        <div class="control-group"><label>Data e Hora</label><input type="datetime-local"
-                                id="wedding-date-input" class="premium-input"></div>
-                        <div class="control-group"><label>Foto de Fundo</label>
-                            <label for="photo-upload" class="btn-primary premium-btn-outline"
-                                style="width: 100%; justify-content: center;" id="upload-label"><span
-                                    class="text">ESCOLHER IMAGEM</span></label>
-                            <input type="file" id="photo-upload" accept="image/*" style="display: none;">
-                        </div>
+
+                <div class="countdown-panel">
+                    <p class="countdown-label" id="countdown-label">Contagem regressiva</p>
+                    <div class="countdown" id="countdown">
+                        <div class="count-cell"><span id="t-days">--</span><small>dias</small></div>
+                        <div class="count-cell"><span id="t-hours">--</span><small>horas</small></div>
+                        <div class="count-cell"><span id="t-minutes">--</span><small>min</small></div>
+                        <div class="count-cell"><span id="t-seconds">--</span><small>seg</small></div>
                     </div>
+                    <p class="countdown-date" id="countdown-date"></p>
                 </div>
-                <div class="timer-grid" id="dashboard-timer">
-                    <div class="premium-panel"><span class="time-val" id="t-days">00</span><span
-                            class="time-label">Dias</span></div>
-                    <div class="premium-panel"><span class="time-val" id="t-hours">00</span><span
-                            class="time-label">Horas</span></div>
-                    <div class="premium-panel"><span class="time-val" id="t-minutes">00</span><span
-                            class="time-label">Min</span></div>
-                    <div class="premium-panel"><span class="time-val" id="t-seconds">00</span><span
-                            class="time-label">Seg</span></div>
+
+                <div class="stat-grid" id="overview-stats"></div>
+
+                <div class="split-grid">
+                    <div class="panel">
+                        <h3 class="panel-title">Próximos pagamentos</h3>
+                        <div id="upcoming-payments"></div>
+                    </div>
+                    <div class="panel">
+                        <h3 class="panel-title">Como estamos</h3>
+                        <div id="overview-progress"></div>
+                    </div>
                 </div>
             </section>
 
-            <section id="vendors" class="tab-content">
-                <header class="premium-header"
-                    style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-                    <h2 class="main-title">Gestão Financeira</h2>
-                    <button id="btn-export-vendors-pdf" class="btn-primary premium-btn-outline"><span
-                            class="icon">📊</span> PDF Financeiro</button>
+            <!-- ============ VALORES ============ -->
+            <section id="finance" class="tab">
+                <header class="tab-head">
+                    <h2 class="tab-title">Valores</h2>
+                    <p class="tab-sub">Fornecedores, contratos e o carnê de cada um.</p>
+                    <button type="button" id="btn-export-finance" class="btn btn-ghost btn-sm">Exportar PDF</button>
                 </header>
-                <div class="finance-summary-cards">
-                    <div class="premium-panel f-card total">
-                        <div class="f-card-header">💎 TOTAL</div><span class="gold-number" id="finance-total">R$
-                            0,00</span>
-                    </div>
-                    <div class="premium-panel f-card paid">
-                        <div class="f-card-header">✔ PAGO</div><span class="gold-number"
-                            style="color:var(--success-green);" id="finance-paid">R$ 0,00</span>
-                    </div>
-                    <div class="premium-panel f-card pending">
-                        <div class="f-card-header">⏳ FALTA</div><span class="gold-number"
-                            style="color:var(--danger-red);" id="finance-pending">R$ 0,00</span>
-                    </div>
-                </div>
-                <div class="premium-panel" style="margin-bottom: 2rem;">
-                    <h3 style="color:var(--gold-primary); margin-bottom: 1.5rem; font-family: var(--font-serif);">📅
-                        Fluxo de Caixa Mensal</h3>
-                    <div id="monthly-cashflow-container"
-                        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">
-                    </div>
-                </div>
-                <div class="premium-panel" style="margin-bottom: 2rem;">
-                    <h3 id="vendor-form-title"
-                        style="color:var(--gold-primary); margin-bottom:1.5rem; font-family: var(--font-serif);">+ Novo
-                        Fornecedor</h3>
+
+                <div class="stat-grid" id="finance-stats"></div>
+
+                <div class="panel form-panel">
+                    <h3 class="panel-title" id="vendor-form-title">Cadastrar fornecedor</h3>
                     <form id="vendor-form">
-                        <div class="form-grid form-grid-4" style="margin-bottom: 1rem;">
-                            <div class="control-group"><label>Nome</label><input type="text" id="v-name"
-                                    class="premium-input" required></div>
-                            <div class="control-group"><label>Pagamento</label><select id="v-method"
-                                    class="premium-input">
-                                    <option>Pix</option>
-                                    <option>Mensal</option>
-                                    <option>Cartão</option>
-                                </select></div>
-                            <div class="control-group"><label>Total (R$)</label><input type="number" id="v-total"
-                                    class="premium-input" required></div>
-                            <div class="control-group"><label>Entrada (R$)</label><input type="number" id="v-entry"
-                                    class="premium-input" value="0"></div>
-                        </div>
-                        <div class="form-grid form-grid-4">
-                            <div class="control-group"><label>Nº Parcelas</label><input type="number"
-                                    id="v-installments" class="premium-input" value="1"></div>
-                            <div class="control-group"><label>1º Pagamento</label><input type="date" id="v-date"
-                                    class="premium-input" required></div>
-                        </div>
-                        <button type="submit" id="btn-submit-vendor" class="btn-primary"
-                            style="width: 100%; margin-top: 1.5rem;">Salvar Contrato</button>
-                        <button type="button" id="btn-cancel-edit" class="btn-primary"
-                            style="display:none; width: 100%; margin-top:10px; background:transparent; border:1px solid #ef4444; color:#ef4444;">Cancelar
-                            Edição</button>
-                    </form>
-                </div>
-                <div id="vendors-list-container"></div>
-            </section>
-
-            <section id="guests" class="tab-content">
-                <header class="premium-header"
-                    style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-                    <h2 class="main-title">Convidados</h2>
-                    <button id="btn-export-pdf" class="btn-primary premium-btn-outline"><span class="icon">📄</span>
-                        Exportar Lista</button>
-                </header>
-                <div class="summary-grid">
-                    <div class="premium-panel"><span class="time-label">Geral</span><span id="guest-total"
-                            class="gold-number">0</span></div>
-                    <div class="premium-panel"><span class="time-label">Adultos</span><span id="guest-adults"
-                            class="gold-number">0</span></div>
-                    <div class="premium-panel"><span class="time-label">Crianças</span><span id="guest-children"
-                            class="gold-number">0</span></div>
-                    <div class="premium-panel"><span class="time-label">Confirmados</span><span id="guest-confirmed"
-                            class="gold-number" style="color:var(--success-green);">0</span></div>
-                </div>
-                <div class="premium-panel" style="margin: 2rem 0;">
-                    <form id="guest-form">
-                        <div class="form-grid"
-                            style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 15px;">
-                            <div class="control-group"><label>Nome / Família</label><input type="text" id="g-name"
-                                    class="premium-input" required></div>
-                            <div class="control-group"><label>WhatsApp</label><input type="tel" id="g-phone"
-                                    class="premium-input"></div>
-                            <div class="control-group"><label>Grupo</label><select id="g-group" class="premium-input">
-                                    <option>Padrinhos</option>
-                                    <option selected>Família</option>
-                                    <option>Amigos</option>
-                                </select></div>
-                            <div class="control-group"><label>Adultos</label><input type="number" id="g-adults"
-                                    class="premium-input" value="1" min="1"></div>
-                            <div class="control-group"><label>Crianças</label><input type="number" id="g-children"
-                                    class="premium-input" value="0" min="0"></div>
-                        </div>
-                        <div class="control-group" style="margin-bottom: 20px; grid-column: 1 / -1;">
-                            <label
-                                style="margin-bottom: 12px; display: block; color: var(--gold-primary); font-size: 0.8rem;">Distribuição
-                                de Bebidas (Qtd. Pessoas)</label>
-                            <div
-                                style="display: flex; gap: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px;">
-                                <div
-                                    style="display: flex; align-items: center; gap: 8px; color: #fff; font-size: 0.85rem;">
-                                    <input type="number" id="drink-beer" class="premium-input"
-                                        style="width: 70px; padding: 0.5rem; text-align: center;" value="0" min="0"> 🍺
-                                    Chopp</div>
-                                <div
-                                    style="display: flex; align-items: center; gap: 8px; color: #fff; font-size: 0.85rem;">
-                                    <input type="number" id="drink-cocktail" class="premium-input"
-                                        style="width: 70px; padding: 0.5rem; text-align: center;" value="0" min="0"> 🍸
-                                    Drinks</div>
-                                <div
-                                    style="display: flex; align-items: center; gap: 8px; color: #fff; font-size: 0.85rem;">
-                                    <input type="number" id="drink-soda" class="premium-input"
-                                        style="width: 70px; padding: 0.5rem; text-align: center;" value="0" min="0"> 🥤
-                                    Refri</div>
-                                <div
-                                    style="display: flex; align-items: center; gap: 8px; color: #fff; font-size: 0.85rem;">
-                                    <input type="number" id="drink-juice" class="premium-input"
-                                        style="width: 70px; padding: 0.5rem; text-align: center;" value="0" min="0"> 🧃
-                                    Suco</div>
-                                <div
-                                    style="display: flex; align-items: center; gap: 8px; color: #fff; font-size: 0.85rem;">
-                                    <input type="number" id="drink-water" class="premium-input"
-                                        style="width: 70px; padding: 0.5rem; text-align: center;" value="0" min="0"> 💧
-                                    Água</div>
+                        <div class="input-row">
+                            <div class="input-group">
+                                <label for="v-name">Fornecedor</label>
+                                <input type="text" id="v-name" class="input" placeholder="Ex: Buffet Villa" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="v-category">Categoria</label>
+                                <select id="v-category" class="input">
+                                    <option value="buffet">Buffet</option>
+                                    <option value="venue">Espaço / Local</option>
+                                    <option value="photo">Foto e vídeo</option>
+                                    <option value="music">Música / DJ</option>
+                                    <option value="decor">Decoração</option>
+                                    <option value="attire">Traje e beleza</option>
+                                    <option value="cake">Bolo e doces</option>
+                                    <option value="invites">Convites e papelaria</option>
+                                    <option value="transport">Transporte</option>
+                                    <option value="church">Cerimônia</option>
+                                    <option value="other" selected>Outros</option>
+                                </select>
                             </div>
                         </div>
-                        <button type="submit" id="btn-submit-guest" class="btn-primary" style="width: 100%;">Adicionar à
-                            Lista</button>
-                        <button type="button" id="btn-cancel-edit-guest" class="btn-primary"
-                            style="display:none; width: 100%; margin-top:10px; background:transparent; border:1px solid #ef4444; color:#ef4444;">Cancelar
-                            Edição</button>
+
+                        <div class="input-row">
+                            <div class="input-group">
+                                <label for="v-total">Valor total (R$)</label>
+                                <input type="number" id="v-total" class="input" min="0" step="0.01" placeholder="0,00"
+                                    required>
+                            </div>
+                            <div class="input-group">
+                                <label for="v-entry">Entrada (R$)</label>
+                                <input type="number" id="v-entry" class="input" min="0" step="0.01" placeholder="0,00">
+                            </div>
+                        </div>
+
+                        <div class="input-row">
+                            <div class="input-group">
+                                <label for="v-installments">Nº de parcelas</label>
+                                <input type="number" id="v-installments" class="input" min="0" max="120" step="1"
+                                    value="1" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="v-date">1º vencimento</label>
+                                <input type="date" id="v-date" class="input" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="v-method">Forma de pagamento</label>
+                                <input type="text" id="v-method" class="input" placeholder="Ex: Pix, cartão">
+                            </div>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="v-notes">Observações</label>
+                            <input type="text" id="v-notes" class="input" placeholder="Contato, condições, etc.">
+                        </div>
+
+                        <p class="form-hint" id="vendor-form-hint"></p>
+
+                        <div class="form-actions">
+                            <button type="submit" id="btn-submit-vendor" class="btn btn-primary">Salvar
+                                fornecedor</button>
+                            <button type="button" id="btn-cancel-vendor" class="btn" hidden>Cancelar</button>
+                        </div>
                     </form>
                 </div>
-                <h3 class="section-divider">💍 Padrinhos</h3>
-                <div id="padrinhos-list-container" style="display:grid; gap:10px; margin-bottom:1rem;"></div>
-                <h3 class="section-divider">💌 Demais Convidados</h3>
-                <div id="guests-list-container" style="display:grid; gap:10px;"></div>
+
+                <div id="vendors-list"></div>
+
+                <div class="panel">
+                    <h3 class="panel-title">Fluxo de caixa por mês</h3>
+                    <div class="cashflow-grid" id="cashflow"></div>
+                </div>
             </section>
 
-            <section id="drinks-tab" class="tab-content">
-                <header class="premium-header"
-                    style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-                    <div>
-                        <h2 class="main-title">Controle de Bebidas</h2>
-                        <p>Cálculo exato de litros</p>
+            <!-- ============ CONVIDADOS ============ -->
+            <section id="guests" class="tab">
+                <header class="tab-head">
+                    <h2 class="tab-title">Convidados</h2>
+                    <p class="tab-sub">Quem vem, quantos são e quanto bebem.</p>
+                    <button type="button" id="btn-export-guests" class="btn btn-ghost btn-sm">Exportar PDF</button>
+                </header>
+
+                <div class="stat-grid" id="guest-stats"></div>
+
+                <div class="panel form-panel">
+                    <h3 class="panel-title" id="guest-form-title">Adicionar convidado</h3>
+                    <form id="guest-form">
+                        <div class="input-row">
+                            <div class="input-group">
+                                <label for="g-name">Nome</label>
+                                <input type="text" id="g-name" class="input" placeholder="Ex: Família Souza" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="g-phone">Telefone</label>
+                                <input type="tel" id="g-phone" class="input" placeholder="(00) 00000-0000">
+                            </div>
+                            <div class="input-group">
+                                <label for="g-group">Grupo</label>
+                                <select id="g-group" class="input">
+                                    <option>Família</option>
+                                    <option>Padrinhos</option>
+                                    <option>Amigos</option>
+                                    <option>Trabalho</option>
+                                    <option>Outros</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="input-row">
+                            <div class="input-group">
+                                <label for="g-adults">Adultos</label>
+                                <input type="number" id="g-adults" class="input" min="0" step="1" value="1">
+                            </div>
+                            <div class="input-group">
+                                <label for="g-children">Crianças</label>
+                                <input type="number" id="g-children" class="input" min="0" step="1" value="0">
+                            </div>
+                            <div class="input-group">
+                                <label for="g-status">Confirmação</label>
+                                <select id="g-status" class="input">
+                                    <option value="pending">Pendente</option>
+                                    <option value="confirmed">Confirmado</option>
+                                    <option value="declined">Não vai</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <fieldset class="drinks-fieldset">
+                            <legend>Consumo estimado (pessoas que bebem cada item)</legend>
+                            <div class="input-row">
+                                <div class="input-group">
+                                    <label for="drink-beer">Cerveja</label>
+                                    <input type="number" id="drink-beer" class="input" min="0" step="1" value="0">
+                                </div>
+                                <div class="input-group">
+                                    <label for="drink-cocktail">Drinks</label>
+                                    <input type="number" id="drink-cocktail" class="input" min="0" step="1" value="0">
+                                </div>
+                                <div class="input-group">
+                                    <label for="drink-soda">Refrigerante</label>
+                                    <input type="number" id="drink-soda" class="input" min="0" step="1" value="0">
+                                </div>
+                                <div class="input-group">
+                                    <label for="drink-juice">Suco</label>
+                                    <input type="number" id="drink-juice" class="input" min="0" step="1" value="0">
+                                </div>
+                                <div class="input-group">
+                                    <label for="drink-water">Água</label>
+                                    <input type="number" id="drink-water" class="input" min="0" step="1" value="0">
+                                </div>
+                            </div>
+                        </fieldset>
+
+                        <div class="form-actions">
+                            <button type="submit" id="btn-submit-guest" class="btn btn-primary">Adicionar</button>
+                            <button type="button" id="btn-cancel-guest" class="btn" hidden>Cancelar</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="panel">
+                    <h3 class="panel-title">Bebidas a comprar</h3>
+                    <div class="stat-grid compact" id="drinks-summary"></div>
+                    <p class="form-hint">Estimativa: 1,5 L de cerveja, 0,6 L de refrigerante, 0,4 L de suco e 0,5 L de
+                        água por pessoa marcada. Só conta quem confirmou presença.</p>
+                </div>
+
+                <div class="panel">
+                    <h3 class="panel-title">Padrinhos</h3>
+                    <div id="padrinhos-list"></div>
+                </div>
+
+                <div class="panel">
+                    <h3 class="panel-title">Demais convidados</h3>
+                    <div id="guests-list"></div>
+                </div>
+            </section>
+
+            <!-- ============ CHECKLIST ============ -->
+            <section id="checklist" class="tab">
+                <header class="tab-head">
+                    <h2 class="tab-title">Checklist</h2>
+                    <p class="tab-sub">O que já resolvemos e o que falta.</p>
+                </header>
+
+                <div class="panel">
+                    <div class="checklist-head">
+                        <div class="checklist-progress">
+                            <div class="progress-track">
+                                <div class="progress-fill" id="checklist-bar" style="width:0%"></div>
+                            </div>
+                        </div>
+                        <strong id="checklist-percent" class="checklist-percent">0%</strong>
                     </div>
-                    <button id="btn-export-drinks-pdf" class="btn-primary premium-btn-outline"><span
-                            class="icon">🛒</span> PDF de Compras</button>
-                </header>
-                <div id="drinks-summary-container" class="summary-grid"
-                    style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 2rem;"></div>
+
+                    <form id="task-form" class="inline-form">
+                        <input type="text" id="new-task" class="input" placeholder="Nova tarefa..." required>
+                        <input type="date" id="new-task-date" class="input" aria-label="Prazo (opcional)">
+                        <button type="submit" class="btn btn-primary">Adicionar</button>
+                    </form>
+                </div>
+
+                <div id="checklist-list"></div>
             </section>
 
-            <section id="checklist" class="tab-content" style="max-width: 800px; margin: 0 auto;">
-                <header class="premium-header">
-                    <h2 class="main-title">A Jornada</h2>
+            <!-- ============ ROTEIRO DO DIA ============ -->
+            <section id="runofshow" class="tab">
+                <header class="tab-head">
+                    <h2 class="tab-title">Roteiro do dia</h2>
+                    <p class="tab-sub">A linha do tempo do grande dia, hora a hora.</p>
                 </header>
-                <div class="premium-panel" style="margin-bottom: 1.5rem; text-align: center;">
-                    <h3 style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase;">Progresso Geral
-                    </h3>
-                    <div id="checklist-percent"
-                        style="font-size: 3rem; font-family: var(--font-serif); color: var(--gold-primary);">0%</div>
-                    <div class="progress-track">
-                        <div id="checklist-bar" class="progress-fill" style="width: 0%;"></div>
-                    </div>
+
+                <div class="panel">
+                    <form id="ros-form" class="inline-form">
+                        <input type="time" id="ros-time" class="input" required aria-label="Horário">
+                        <select id="ros-role" class="input" aria-label="Quem">
+                            <option value="both">Os dois</option>
+                            <option value="bride">Noiva</option>
+                            <option value="groom">Noivo</option>
+                        </select>
+                        <input type="text" id="ros-title" class="input" placeholder="O que acontece..." required>
+                        <button type="submit" class="btn btn-primary">Adicionar</button>
+                    </form>
                 </div>
-                <div class="premium-panel" style="margin-bottom: 1.5rem; display: flex; gap: 15px; flex-wrap: wrap;">
-                    <input type="text" id="new-task-input" placeholder="Nova tarefa..." class="premium-input"
-                        style="flex: 1;">
-                    <button id="btn-add-task" class="btn-primary">Adicionar</button>
+
+                <div class="panel">
+                    <div class="timeline" id="ros-timeline"></div>
                 </div>
-                <div id="checklist-container" style="display: flex; flex-direction: column; gap: 10px;"></div>
             </section>
 
-            <section id="runofshow" class="tab-content" style="max-width: 800px; margin: 0 auto;">
-                <header class="premium-header">
-                    <h2 class="main-title">Run of Show</h2>
+            <!-- ============ LUA DE MEL ============ -->
+            <section id="honeymoon" class="tab">
+                <header class="tab-head">
+                    <h2 class="tab-title">Lua de mel</h2>
+                    <p class="tab-sub">A viagem depois da festa.</p>
                 </header>
-                <div class="premium-panel"
-                    style="margin-bottom: 2rem; display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
-                    <div class="control-group" style="flex: 1; min-width: 100px;"><label>Hora</label><input type="time"
-                            id="ros-time" class="premium-input" required></div>
-                    <div class="control-group" style="flex: 1.5; min-width: 120px;"><label>Quem?</label><select
-                            id="ros-role" class="premium-input">
-                            <option value="noiva">👰 Noiva</option>
-                            <option value="noivo">🤵 Noivo</option>
-                            <option value="ambos">💍 Ambos</option>
-                        </select></div>
-                    <div class="control-group" style="flex: 3; min-width: 200px;"><label>O que vai
-                            acontecer?</label><input type="text" id="ros-desc" class="premium-input" required></div>
-                    <button id="btn-add-ros" class="btn-primary">+ Add</button>
-                </div>
-                <div id="ros-timeline" class="timeline-container"
-                    style="position: relative; padding: 1rem 0; display: flex; flex-direction: column;"></div>
+                <div id="honeymoon-content"></div>
             </section>
+
+            <!-- ============ CONFIGURAÇÕES ============ -->
+            <section id="settings" class="tab">
+                <header class="tab-head">
+                    <h2 class="tab-title">Configurações</h2>
+                    <p class="tab-sub">Os dados do casamento e quem tem acesso.</p>
+                </header>
+
+                <div class="panel form-panel">
+                    <h3 class="panel-title">Nosso casamento</h3>
+                    <form id="wedding-form">
+                        <div class="input-row">
+                            <div class="input-group">
+                                <label for="w-partner1">Nome 1</label>
+                                <input type="text" id="w-partner1" class="input" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="w-partner2">Nome 2</label>
+                                <input type="text" id="w-partner2" class="input" required>
+                            </div>
+                        </div>
+                        <div class="input-row">
+                            <div class="input-group">
+                                <label for="w-date">Data</label>
+                                <input type="date" id="w-date" class="input">
+                            </div>
+                            <div class="input-group">
+                                <label for="w-time">Horário da cerimônia</label>
+                                <input type="time" id="w-time" class="input">
+                            </div>
+                            <div class="input-group">
+                                <label for="w-budget">Orçamento total (R$)</label>
+                                <input type="number" id="w-budget" class="input" min="0" step="0.01"
+                                    placeholder="0,00">
+                            </div>
+                        </div>
+                        <div class="input-row">
+                            <div class="input-group">
+                                <label for="w-venue">Local</label>
+                                <input type="text" id="w-venue" class="input" placeholder="Ex: Espaço Villa Real">
+                            </div>
+                            <div class="input-group">
+                                <label for="w-city">Cidade</label>
+                                <input type="text" id="w-city" class="input" placeholder="Ex: Cuiabá">
+                            </div>
+                        </div>
+                        <div class="input-group">
+                            <label for="w-cover">Imagem de fundo (URL)</label>
+                            <input type="url" id="w-cover" class="input" placeholder="https://...">
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">Salvar</button>
+                            <span id="wedding-form-feedback" class="form-hint"></span>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="panel">
+                    <h3 class="panel-title">Quem tem acesso</h3>
+                    <div id="members-list"></div>
+
+                    <form id="invite-form" class="inline-form" style="margin-top:18px;">
+                        <input type="email" id="invite-email" class="input" placeholder="E-mail do seu par" required>
+                        <button type="submit" class="btn">Gerar convite</button>
+                    </form>
+                    <p class="form-hint">Ela cria a conta na tela de login e depois cola o código do convite. Só quem
+                        está nesta lista enxerga os valores.</p>
+                </div>
+            </section>
+
         </main>
     </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
     <script type="module" src="dashboard.js"></script>
 </body>
 

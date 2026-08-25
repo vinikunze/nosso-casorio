@@ -1,7 +1,15 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-// SUAS CHAVES REAIS DO SUPABASE CONFIGURADAS
-const supabaseUrl = 'https://ddsfdcsoiwpbeuwnpsve.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkc2ZkY3NvaXdwYmV1d25wc3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyNjE3NzUsImV4cCI6MjA5MzgzNzc3NX0._M_cdXuVXAOG4cgAAmdK6lC_vkaczhGgECvi0axeP5U';
+// Projeto "lua de mel" — guarda o casamento e a viagem no mesmo banco.
+// A chave publicável pode ficar no código: quem manda no acesso é a RLS,
+// que só libera as linhas do casamento em que você é membro.
+const SUPABASE_URL = 'https://ccvlaywiyvrixduvbccj.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_CB2fioqF__O8x_Vt4MBVsg_axk7Ui2J';
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+    }
+});
