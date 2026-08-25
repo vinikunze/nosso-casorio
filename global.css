@@ -1,0 +1,167 @@
+:root {
+    /* Paleta Premium Dark Solid */
+    --gold-primary: #DCA54C;
+    --gold-light: #F2C94C;
+    --gold-dark: #B8860B;
+
+    --navy-deep: #0A111E;
+    --navy-panel: #111A2E;
+    --navy-input: #050914;
+
+    --text-light: #F0F2F5;
+    --text-muted: #8D99AE;
+
+    --success-green: #2ecc71;
+    --danger-red: #ff4d4f;
+    --accent-blue: #3b82f6;
+
+    --panel-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    --glass-border: rgba(255, 255, 255, 0.05);
+
+    /* Tipografia */
+    --font-sans: 'Inter', sans-serif;
+    --font-serif: 'Playfair Display', serif;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-sans);
+    color: var(--text-light);
+    background: var(--navy-deep);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ==========================================
+   ANIMAÇÕES GLOBAIS
+   ========================================== */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(15px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ==========================================
+   ELEMENTOS REUTILIZÁVEIS E BOTÕES
+   ========================================== */
+.btn-primary {
+    background: var(--gold-primary);
+    color: #000;
+    padding: 0.8rem 1.5rem;
+    border-radius: 6px;
+    border: none;
+    font-weight: 700;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 0.9rem;
+}
+
+.btn-primary:hover {
+    background: var(--gold-light);
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(220, 165, 76, 0.2);
+}
+
+/* ==========================================
+   INPUTS E FORMULÁRIOS
+   ========================================== */
+.premium-input {
+    background: var(--navy-input);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #fff;
+    padding: 0.8rem 1rem;
+    border-radius: 6px;
+    outline: none;
+    transition: 0.3s;
+    font-family: var(--font-sans);
+    width: 100%;
+    font-size: 0.9rem;
+}
+
+.premium-input:focus {
+    border-color: var(--gold-primary);
+}
+
+.premium-input::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+}
+
+.control-group label {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--gold-primary);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+/* ==========================================
+   DIVISORES E STATUS
+   ========================================== */
+.section-divider {
+    font-family: var(--font-serif);
+    color: var(--gold-primary);
+    font-size: 1.4rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--glass-border);
+    padding-bottom: 8px;
+    display: block;
+    margin-top: 2rem;
+}
+
+.confirmado {
+    color: var(--success-green) !important;
+}
+
+.pendente {
+    color: #f1c40f !important;
+}
+
+.recusado {
+    color: var(--danger-red) !important;
+}
+
+/* ==========================================
+   BARRA DE ROLAGEM AWWWARDS (CORRIGIDA)
+   ========================================== */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+    /* Impede a barra horizontal grossa caso ela surja */
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+    /* Fundo invisível para não conflitar */
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--gold-dark);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--gold-primary);
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
+    /* Remove quadrados brancos nos cantos */
+}

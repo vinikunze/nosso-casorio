@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WeddingPro | Dashboard Premium</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="global.css">
+    <link rel="stylesheet" href="dashboard.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+
+<body>
+    <div id="dynamic-bg" class="dynamic-bg"></div>
+    <div class="overlay-dark"></div>
+
+    <div class="app-container">
+        <aside class="sidebar">
+            <header class="logo">
+                <h1 id="sidebar-names-display">Carregando...</h1>
+                <span class="logo-subtitle">SaaS Premium</span>
+            </header>
+            <nav class="sidebar-nav">
+                <button class="nav-btn active" data-target="overview"><span class="icon">⏱️</span><span
+                        class="text">Visão Geral</span></button>
+                <button class="nav-btn" data-target="vendors"><span class="icon">💼</span><span
+                        class="text">Fornecedores</span></button>
+                <button class="nav-btn" data-target="guests"><span class="icon">💌</span><span
+                        class="text">Convidados</span></button>
+                <button class="nav-btn" data-target="drinks-tab"><span class="icon">🥂</span><span
+                        class="text">Bebidas</span></button>
+                <button class="nav-btn" data-target="checklist"><span class="icon">✅</span><span
+                        class="text">Checklist</span></button>
+                <button class="nav-btn" data-target="runofshow"><span class="icon">📜</span><span
+                        class="text">Cronograma</span></button>
+            </nav>
+            <footer class="sidebar-footer">
+                <button id="btn-logout" class="nav-btn"><span class="icon">👋</span><span class="text">Sair do
+                        Sistema</span></button>
+            </footer>
+        </aside>
+
+        <main class="content">
+            <section id="overview" class="tab-content active">
+                <header class="premium-header">
+                    <h2 class="main-title">A Jornada até o Altar</h2>
+                </header>
+                <div class="premium-panel" style="margin-bottom: 2rem;">
+                    <div class="form-grid form-grid-3">
+                        <div class="control-group"><label>Nomes</label><input type="text" id="names-input"
+                                class="premium-input"></div>
+                        <div class="control-group"><label>Data e Hora</label><input type="datetime-local"
+                                id="wedding-date-input" class="premium-input"></div>
+                        <div class="control-group"><label>Foto de Fundo</label>
+                            <label for="photo-upload" class="btn-primary premium-btn-outline"
+                                style="width: 100%; justify-content: center;" id="upload-label"><span
+                                    class="text">ESCOLHER IMAGEM</span></label>
+                            <input type="file" id="photo-upload" accept="image/*" style="display: none;">
+                        </div>
+                    </div>
+                </div>
+                <div class="timer-grid" id="dashboard-timer">
+                    <div class="premium-panel"><span class="time-val" id="t-days">00</span><span
+                            class="time-label">Dias</span></div>
+                    <div class="premium-panel"><span class="time-val" id="t-hours">00</span><span
+                            class="time-label">Horas</span></div>
+                    <div class="premium-panel"><span class="time-val" id="t-minutes">00</span><span
+                            class="time-label">Min</span></div>
+                    <div class="premium-panel"><span class="time-val" id="t-seconds">00</span><span
+                            class="time-label">Seg</span></div>
+                </div>
+            </section>
+
+            <section id="vendors" class="tab-content">
+                <header class="premium-header"
+                    style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                    <h2 class="main-title">Gestão Financeira</h2>
+                    <button id="btn-export-vendors-pdf" class="btn-primary premium-btn-outline"><span
+                            class="icon">📊</span> PDF Financeiro</button>
+                </header>
+                <div class="finance-summary-cards">
+                    <div class="premium-panel f-card total">
+                        <div class="f-card-header">💎 TOTAL</div><span class="gold-number" id="finance-total">R$
+                            0,00</span>
+                    </div>
+                    <div class="premium-panel f-card paid">
+                        <div class="f-card-header">✔ PAGO</div><span class="gold-number"
+                            style="color:var(--success-green);" id="finance-paid">R$ 0,00</span>
+                    </div>
+                    <div class="premium-panel f-card pending">
+                        <div class="f-card-header">⏳ FALTA</div><span class="gold-number"
+                            style="color:var(--danger-red);" id="finance-pending">R$ 0,00</span>
+                    </div>
+                </div>
+                <div class="premium-panel" style="margin-bottom: 2rem;">
+                    <h3 style="color:var(--gold-primary); margin-bottom: 1.5rem; font-family: var(--font-serif);">📅
+                        Fluxo de Caixa Mensal</h3>
+                    <div id="monthly-cashflow-container"
+                        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">
+                    </div>
+                </div>
+                <div class="premium-panel" style="margin-bottom: 2rem;">
+                    <h3 id="vendor-form-title"
+                        style="color:var(--gold-primary); margin-bottom:1.5rem; font-family: var(--font-serif);">+ Novo
+                        Fornecedor</h3>
+                    <form id="vendor-form">
+                        <div class="form-grid form-grid-4" style="margin-bottom: 1rem;">
+                            <div class="control-group"><label>Nome</label><input type="text" id="v-name"
+                                    class="premium-input" required></div>
+                            <div class="control-group"><label>Pagamento</label><select id="v-method"
+                                    class="premium-input">
+                                    <option>Pix</option>
+                                    <option>Mensal</option>
+                                    <option>Cartão</option>
+                                </select></div>
+                            <div class="control-group"><label>Total (R$)</label><input type="number" id="v-total"
+                                    class="premium-input" required></div>
+                            <div class="control-group"><label>Entrada (R$)</label><input type="number" id="v-entry"
+                                    class="premium-input" value="0"></div>
+                        </div>
+                        <div class="form-grid form-grid-4">
+                            <div class="control-group"><label>Nº Parcelas</label><input type="number"
+                                    id="v-installments" class="premium-input" value="1"></div>
+                            <div class="control-group"><label>1º Pagamento</label><input type="date" id="v-date"
+                                    class="premium-input" required></div>
+                        </div>
+                        <button type="submit" id="btn-submit-vendor" class="btn-primary"
+                            style="width: 100%; margin-top: 1.5rem;">Salvar Contrato</button>
+                        <button type="button" id="btn-cancel-edit" class="btn-primary"
+                            style="display:none; width: 100%; margin-top:10px; background:transparent; border:1px solid #ef4444; color:#ef4444;">Cancelar
+                            Edição</button>
+                    </form>
+                </div>
+                <div id="vendors-list-container"></div>
+            </section>
+
+            <section id="guests" class="tab-content">
+                <header class="premium-header"
+                    style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                    <h2 class="main-title">Convidados</h2>
+                    <button id="btn-export-pdf" class="btn-primary premium-btn-outline"><span class="icon">📄</span>
+                        Exportar Lista</button>
+                </header>
+                <div class="summary-grid">
+                    <div class="premium-panel"><span class="time-label">Geral</span><span id="guest-total"
+                            class="gold-number">0</span></div>
+                    <div class="premium-panel"><span class="time-label">Adultos</span><span id="guest-adults"
+                            class="gold-number">0</span></div>
+                    <div class="premium-panel"><span class="time-label">Crianças</span><span id="guest-children"
+                            class="gold-number">0</span></div>
+                    <div class="premium-panel"><span class="time-label">Confirmados</span><span id="guest-confirmed"
+                            class="gold-number" style="color:var(--success-green);">0</span></div>
+                </div>
+                <div class="premium-panel" style="margin: 2rem 0;">
+                    <form id="guest-form">
+                        <div class="form-grid"
+                            style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 15px;">
+                            <div class="control-group"><label>Nome / Família</label><input type="text" id="g-name"
+                                    class="premium-input" required></div>
+                            <div class="control-group"><label>WhatsApp</label><input type="tel" id="g-phone"
+                                    class="premium-input"></div>
+                            <div class="control-group"><label>Grupo</label><select id="g-group" class="premium-input">
+                                    <option>Padrinhos</option>
+                                    <option selected>Família</option>
+                                    <option>Amigos</option>
+                                </select></div>
+                            <div class="control-group"><label>Adultos</label><input type="number" id="g-adults"
+                                    class="premium-input" value="1" min="1"></div>
+                            <div class="control-group"><label>Crianças</label><input type="number" id="g-children"
+                                    class="premium-input" value="0" min="0"></div>
+                        </div>
+                        <div class="control-group" style="margin-bottom: 20px; grid-column: 1 / -1;">
+                            <label
+                                style="margin-bottom: 12px; display: block; color: var(--gold-primary); font-size: 0.8rem;">Distribuição
+                                de Bebidas (Qtd. Pessoas)</label>
+                            <div
+                                style="display: flex; gap: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px;">
+                                <div
+                                    style="display: flex; align-items: center; gap: 8px; color: #fff; font-size: 0.85rem;">
+                                    <input type="number" id="drink-beer" class="premium-input"
+                                        style="width: 70px; padding: 0.5rem; text-align: center;" value="0" min="0"> 🍺
+                                    Chopp</div>
+                                <div
+                                    style="display: flex; align-items: center; gap: 8px; color: #fff; font-size: 0.85rem;">
+                                    <input type="number" id="drink-cocktail" class="premium-input"
+                                        style="width: 70px; padding: 0.5rem; text-align: center;" value="0" min="0"> 🍸
+                                    Drinks</div>
+                                <div
+                                    style="display: flex; align-items: center; gap: 8px; color: #fff; font-size: 0.85rem;">
+                                    <input type="number" id="drink-soda" class="premium-input"
+                                        style="width: 70px; padding: 0.5rem; text-align: center;" value="0" min="0"> 🥤
+                                    Refri</div>
+                                <div
+                                    style="display: flex; align-items: center; gap: 8px; color: #fff; font-size: 0.85rem;">
+                                    <input type="number" id="drink-juice" class="premium-input"
+                                        style="width: 70px; padding: 0.5rem; text-align: center;" value="0" min="0"> 🧃
+                                    Suco</div>
+                                <div
+                                    style="display: flex; align-items: center; gap: 8px; color: #fff; font-size: 0.85rem;">
+                                    <input type="number" id="drink-water" class="premium-input"
+                                        style="width: 70px; padding: 0.5rem; text-align: center;" value="0" min="0"> 💧
+                                    Água</div>
+                            </div>
+                        </div>
+                        <button type="submit" id="btn-submit-guest" class="btn-primary" style="width: 100%;">Adicionar à
+                            Lista</button>
+                        <button type="button" id="btn-cancel-edit-guest" class="btn-primary"
+                            style="display:none; width: 100%; margin-top:10px; background:transparent; border:1px solid #ef4444; color:#ef4444;">Cancelar
+                            Edição</button>
+                    </form>
+                </div>
+                <h3 class="section-divider">💍 Padrinhos</h3>
+                <div id="padrinhos-list-container" style="display:grid; gap:10px; margin-bottom:1rem;"></div>
+                <h3 class="section-divider">💌 Demais Convidados</h3>
+                <div id="guests-list-container" style="display:grid; gap:10px;"></div>
+            </section>
+
+            <section id="drinks-tab" class="tab-content">
+                <header class="premium-header"
+                    style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                    <div>
+                        <h2 class="main-title">Controle de Bebidas</h2>
+                        <p>Cálculo exato de litros</p>
+                    </div>
+                    <button id="btn-export-drinks-pdf" class="btn-primary premium-btn-outline"><span
+                            class="icon">🛒</span> PDF de Compras</button>
+                </header>
+                <div id="drinks-summary-container" class="summary-grid"
+                    style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 2rem;"></div>
+            </section>
+
+            <section id="checklist" class="tab-content" style="max-width: 800px; margin: 0 auto;">
+                <header class="premium-header">
+                    <h2 class="main-title">A Jornada</h2>
+                </header>
+                <div class="premium-panel" style="margin-bottom: 1.5rem; text-align: center;">
+                    <h3 style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase;">Progresso Geral
+                    </h3>
+                    <div id="checklist-percent"
+                        style="font-size: 3rem; font-family: var(--font-serif); color: var(--gold-primary);">0%</div>
+                    <div class="progress-track">
+                        <div id="checklist-bar" class="progress-fill" style="width: 0%;"></div>
+                    </div>
+                </div>
+                <div class="premium-panel" style="margin-bottom: 1.5rem; display: flex; gap: 15px; flex-wrap: wrap;">
+                    <input type="text" id="new-task-input" placeholder="Nova tarefa..." class="premium-input"
+                        style="flex: 1;">
+                    <button id="btn-add-task" class="btn-primary">Adicionar</button>
+                </div>
+                <div id="checklist-container" style="display: flex; flex-direction: column; gap: 10px;"></div>
+            </section>
+
+            <section id="runofshow" class="tab-content" style="max-width: 800px; margin: 0 auto;">
+                <header class="premium-header">
+                    <h2 class="main-title">Run of Show</h2>
+                </header>
+                <div class="premium-panel"
+                    style="margin-bottom: 2rem; display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
+                    <div class="control-group" style="flex: 1; min-width: 100px;"><label>Hora</label><input type="time"
+                            id="ros-time" class="premium-input" required></div>
+                    <div class="control-group" style="flex: 1.5; min-width: 120px;"><label>Quem?</label><select
+                            id="ros-role" class="premium-input">
+                            <option value="noiva">👰 Noiva</option>
+                            <option value="noivo">🤵 Noivo</option>
+                            <option value="ambos">💍 Ambos</option>
+                        </select></div>
+                    <div class="control-group" style="flex: 3; min-width: 200px;"><label>O que vai
+                            acontecer?</label><input type="text" id="ros-desc" class="premium-input" required></div>
+                    <button id="btn-add-ros" class="btn-primary">+ Add</button>
+                </div>
+                <div id="ros-timeline" class="timeline-container"
+                    style="position: relative; padding: 1rem 0; display: flex; flex-direction: column;"></div>
+            </section>
+        </main>
+    </div>
+    <script type="module" src="dashboard.js"></script>
+</body>
+
+</html>
