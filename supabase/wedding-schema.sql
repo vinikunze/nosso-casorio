@@ -3,7 +3,8 @@
 --
 -- Aplicado no projeto Supabase "nosso-casorio" (sifoxqaxqzygqxonqwlw) pelas
 -- migrations wedding_base_schema, wedding_rls_policies,
--- move_permission_helpers_to_private_schema e planner_views_without_amounts. Este arquivo junta todas, para
+-- move_permission_helpers_to_private_schema, planner_views_without_amounts e
+-- vendor_status_paying. Este arquivo junta todas, para
 -- consulta e para recriar o banco do zero se um dia for preciso.
 --
 -- Quem é quem (wedding_members.role):
@@ -27,8 +28,8 @@ create type public.invite_status       as enum ('pending', 'accepted', 'revoked'
 create type public.guest_status        as enum ('pending', 'confirmed', 'declined');
 create type public.wedding_task_status as enum ('pending', 'in_progress', 'done');
 create type public.ros_role            as enum ('bride', 'groom', 'both');
--- Situação do fornecedor: tudo certo, falta acertar, ou precisa de atenção já.
-create type public.vendor_status       as enum ('pending', 'urgent', 'ok');
+-- Situação do fornecedor: falta acertar, urgente, estamos pagando ou tudo certo.
+create type public.vendor_status       as enum ('pending', 'urgent', 'paying', 'ok');
 
 create or replace function public.set_updated_at()
 returns trigger language plpgsql set search_path to ''

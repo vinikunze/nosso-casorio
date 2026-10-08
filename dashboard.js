@@ -40,6 +40,7 @@ const CATEGORY_LABELS = {
 const VENDOR_STATUS = {
     urgent: { label: 'Urgente', badge: 'danger', row: 'declined' },
     pending: { label: 'Falta acertar', badge: 'warning', row: 'pending' },
+    paying: { label: 'Estamos pagando', badge: 'info', row: 'in_progress' },
     ok: { label: 'Tudo certo', badge: 'success', row: 'confirmed' }
 };
 const VENDOR_STATUS_ORDER = Object.keys(VENDOR_STATUS);
@@ -441,7 +442,7 @@ function guestTotals() {
 }
 
 function vendorCounts() {
-    const counts = { total: state.vendors.length, ok: 0, pending: 0, urgent: 0 };
+    const counts = { total: state.vendors.length, ok: 0, paying: 0, pending: 0, urgent: 0 };
     for (const vendor of state.vendors) counts[vendor.status] = (counts[vendor.status] ?? 0) + 1;
     return counts;
 }
@@ -623,8 +624,8 @@ function renderOverview() {
 
     $('overview-stats').innerHTML = cards.map(statCard).join('');
 
-    // Fornecedores que não estão certos, urgentes primeiro.
-    const attention = sortedVendors(state.vendors.filter((v) => v.status !== 'ok')).slice(0, 6);
+    // Urgentes e com algo a acertar. Quem está sendo pago já está encaminhado.
+    const attention = sortedVendors(state.vendors.filter((v) => v.status === 'urgent' || v.status === 'pending')).slice(0, 6);
     $('overview-vendors').innerHTML = attention.length
         ? attention.map((vendor) => {
             const status = VENDOR_STATUS[vendor.status] ?? VENDOR_STATUS.pending;
@@ -639,7 +640,7 @@ function renderOverview() {
                 </div>`;
         }).join('')
         : `<p class="empty-state">${vendors.total
-            ? 'Todos os fornecedores estão certos.'
+            ? 'Nenhum fornecedor precisa de atenção agora.'
             : 'Nenhum fornecedor cadastrado ainda.'}</p>`;
 
     // Próximos pagamentos: com valor para o casal, sem valor para a cerimonialista.
@@ -731,6 +732,7 @@ function renderVendorDirectory() {
     $('vendor-stats').innerHTML = [
         { label: 'Fornecedores', value: String(counts.total), variant: 'accent' },
         { label: 'Tudo certo', value: String(counts.ok), variant: 'good' },
+        { label: 'Estamos pagando', value: String(counts.paying) },
         { label: 'Falta acertar', value: String(counts.pending) },
         {
             label: 'Urgentes',

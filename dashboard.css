@@ -367,6 +367,11 @@ body {
     margin-bottom: 24px;
 }
 
+/* Cinco contadores numa linha só (fornecedores e convidados). */
+.stat-grid.five {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
 .stat-grid.compact {
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     margin-bottom: 14px;
