@@ -44,16 +44,10 @@
 
 .login-monogram {
     display: inline-flex;
-    align-items: center;
     justify-content: center;
-    width: 54px;
-    height: 54px;
-    margin-bottom: 16px;
-    font-family: var(--font-serif);
-    font-size: 1.9rem;
+    width: 66px;
+    margin-bottom: 14px;
     color: var(--gold);
-    border: 1px solid var(--gold-dim);
-    border-radius: 50%;
 }
 
 .login-logo h1 {
