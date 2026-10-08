@@ -60,7 +60,7 @@ export async function updateWedding(weddingId, patch) {
     if (error) throw error;
 }
 
-/** Dados só do casal: orçamento e a lua de mel. Volta null para a cerimonialista. */
+/** Dados só do casal (orçamento). Volta null para a cerimonialista. */
 export async function fetchWeddingPrivate(weddingId) {
     const { data, error } = await supabase
         .from('wedding_private')
@@ -360,50 +360,12 @@ export async function deleteRunOfShowItem(itemId) {
 }
 
 // ---------------------------------------------------------
-// Lua de mel (só o casal enxerga)
-// ---------------------------------------------------------
-
-export async function fetchHoneymoonItems(weddingId) {
-    const { data, error } = await supabase
-        .from('honeymoon_items')
-        .select('*')
-        .eq('wedding_id', weddingId)
-        .order('position', { ascending: true })
-        .order('created_at', { ascending: true });
-
-    if (error) throw error;
-    return data ?? [];
-}
-
-/** Lua de mel SEM valores (para a cerimonialista): destino, datas e pendências. */
-export async function fetchHoneymoonOverview(weddingId) {
-    const { data, error } = await supabase.rpc('get_honeymoon_overview', { p_wedding_id: weddingId });
-    if (error) throw error;
-    return data;
-}
-
-export async function createHoneymoonItem(weddingId, item) {
-    const { error } = await supabase.from('honeymoon_items').insert({ wedding_id: weddingId, ...item });
-    if (error) throw error;
-}
-
-export async function updateHoneymoonItem(itemId, patch) {
-    const { error } = await supabase.from('honeymoon_items').update(patch).eq('id', itemId);
-    if (error) throw error;
-}
-
-export async function deleteHoneymoonItem(itemId) {
-    const { error } = await supabase.from('honeymoon_items').delete().eq('id', itemId);
-    if (error) throw error;
-}
-
-// ---------------------------------------------------------
 // Tempo real
 // ---------------------------------------------------------
 
 const WEDDING_TABLES = [
     'weddings', 'wedding_private', 'wedding_members', 'vendors', 'vendor_contracts',
-    'vendor_payments', 'guests', 'wedding_tasks', 'run_of_show_items', 'honeymoon_items'
+    'vendor_payments', 'guests', 'wedding_tasks', 'run_of_show_items'
 ];
 
 export function subscribeToChanges(onChange) {

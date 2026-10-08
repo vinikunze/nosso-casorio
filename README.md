@@ -1,7 +1,7 @@
 # Nosso Casório
 
 Painel privado do casamento — fornecedores, parcelas, convidados, checklist,
-roteiro do dia e a lua de mel. Feito para o casal, com um acesso separado para
+roteiro do dia. Feito para o casal, com um acesso separado para
 a cerimonialista acompanhar junto.
 
 Site estático (HTML, CSS e JavaScript puro, sem build) com Supabase por trás.
@@ -43,14 +43,17 @@ A cerimonialista vê **tudo, menos valores em dinheiro**.
 | Checklist e roteiro do dia | vê e edita | vê e edita |
 | Pagamentos | vê e edita, com valores | vê parcela por parcela (paga, a vencer, atrasada) e quem está quitado, **sem valores** |
 | Orçamento | vê e edita | **não vê** |
-| Lua de mel | vê e edita, com valores | vê destino, datas e pendências, **sem valores** |
 | Configurações | edita; só o dono convida e troca acessos | só leitura |
 
 Isso é garantido no banco, não só na tela: o que é dinheiro mora em tabelas
-separadas (`vendor_contracts`, `vendor_payments`, `wedding_private`,
-`honeymoon_items`) que a RLS esconde dela. O andamento sem valores chega por
-duas funções que devolvem tudo menos o dinheiro: `get_payment_status` e
-`get_honeymoon_overview`.
+separadas (`vendor_contracts`, `vendor_payments`, `wedding_private`) que a RLS
+esconde dela. O andamento dos pagamentos chega por uma função que devolve tudo
+menos o dinheiro: `get_payment_status`.
+
+> A aba de lua de mel foi tirada do site. A tabela `honeymoon_items`, as
+> colunas `honeymoon_*` de `wedding_private` e a função
+> `get_honeymoon_overview` continuam no banco, vazias e sem uso, caso um dia
+> ela volte.
 
 ### Dando acesso a alguém
 
