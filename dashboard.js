@@ -1,21 +1,27 @@
 import * as db from './db.js';
-import { exportFinancePdf, exportGuestsPdf } from './export-pdf.js';
+import { exportFinancePdf, exportGuestsPdf, exportVendorsPdf } from './export-pdf.js';
 
 // ==========================================================
 // Estado
 // ==========================================================
 
 const state = {
+    userId: null,
+    role: null,
     wedding: null,
+    private: null,
     members: [],
     vendors: [],
     guests: [],
     tasks: [],
     runOfShow: [],
-    honeymoon: null,
+    honeymoonItems: [],
     editingVendorId: null,
     editingVendorInputs: null,
+    editingContactId: null,
     editingGuestId: null,
+    vendorFilter: 'all',
+    guestFilter: 'all',
     countdownTimer: null,
     unsubscribe: null,
     reloading: false,
@@ -23,10 +29,19 @@ const state = {
 };
 
 const CATEGORY_LABELS = {
-    buffet: 'Buffet', venue: 'Espaço', photo: 'Foto e vídeo', music: 'Música',
-    decor: 'Decoração', attire: 'Traje e beleza', cake: 'Bolo e doces',
-    invites: 'Convites', transport: 'Transporte', church: 'Cerimônia', other: 'Outros'
+    venue: 'Espaço / Local', buffet: 'Buffet', bar: 'Bar e bebidas', cake: 'Bolo e doces',
+    decor: 'Decoração', photo: 'Foto e vídeo', music: 'Música / DJ', sound: 'Som e iluminação',
+    attire: 'Traje e beleza', rings: 'Alianças', invites: 'Convites e papelaria',
+    transport: 'Transporte', church: 'Cerimônia', other: 'Outros'
 };
+
+// A ordem define a ordem da lista: urgente primeiro, certo por último.
+const VENDOR_STATUS = {
+    urgent: { label: 'Urgente', badge: 'danger', row: 'declined' },
+    pending: { label: 'Falta acertar', badge: 'warning', row: 'pending' },
+    ok: { label: 'Tudo certo', badge: 'success', row: 'confirmed' }
+};
+const VENDOR_STATUS_ORDER = Object.keys(VENDOR_STATUS);
 
 const GUEST_STATUS = {
     pending: { label: 'Pendente', badge: 'warning' },
@@ -42,8 +57,47 @@ const TASK_STATUS = {
 
 const ROS_ROLE = { bride: '👰 Noiva', groom: '🤵 Noivo', both: '💍 Os dois' };
 
+const ROLE_LABELS = {
+    owner: 'Dono',
+    editor: 'Acesso total',
+    planner: 'Cerimonialista',
+    viewer: 'Só vê'
+};
+
+const HONEYMOON_CATEGORY = {
+    flight: 'Voo', stay: 'Hospedagem', tour: 'Passeio', docs: 'Documentos', other: 'Outros'
+};
+
 // Litros por pessoa marcada em cada bebida.
 const DRINK_RATIOS = { beer: 1.5, soda: 0.6, juice: 0.4, water: 0.5 };
+
+// ==========================================================
+// Permissões
+// O banco é quem garante (RLS). Aqui é só para não mostrar botão que
+// não vai funcionar nem tela que voltaria vazia.
+// ==========================================================
+
+const can = {
+    seeFinance: () => ['owner', 'editor', 'viewer'].includes(state.role),
+    editWedding: () => ['owner', 'editor'].includes(state.role),
+    plan: () => ['owner', 'editor', 'planner'].includes(state.role),
+    manageMembers: () => state.role === 'owner'
+};
+
+function applyRole() {
+    const toggle = (selector, visible) =>
+        document.querySelectorAll(selector).forEach((element) => { element.hidden = !visible; });
+
+    toggle('[data-finance]', can.seeFinance());
+    toggle('[data-couple]', can.editWedding());
+    toggle('[data-owner]', can.manageMembers());
+
+    $('role-label').textContent = state.role === 'owner' ? '' : ROLE_LABELS[state.role] ?? '';
+
+    // Se a aba aberta sumiu (o papel mudou), volta para a visão geral.
+    const active = document.querySelector('.tab.active');
+    if (active?.hidden) showTab('overview');
+}
 
 // ==========================================================
 // Utilidades
@@ -116,6 +170,20 @@ function isOverdue(payment) {
     return !payment.is_paid && payment.due_date && payment.due_date < todayIso();
 }
 
+/** Número para o link do WhatsApp: só dígitos, com 55 na frente se for número brasileiro sem DDI. */
+function whatsappNumber(phone) {
+    const digits = String(phone ?? '').replace(/\D/g, '');
+    if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+    if (digits.length >= 12) return digits;
+    return null;
+}
+
+function statusOptions(map, current) {
+    return Object.entries(map).map(([value, info]) =>
+        `<option value="${value}" ${current === value ? 'selected' : ''}>${info.label}</option>`
+    ).join('');
+}
+
 let toastTimer = null;
 function toast(message, kind = '') {
     const element = $('toast');
@@ -165,8 +233,11 @@ async function boot() {
         window.location.replace('index.html');
         return;
     }
+    state.userId = session.user.id;
 
     try {
+        // Quem foi convidado por e-mail entra direto, sem colar código.
+        await db.claimInvites().catch((error) => console.error('Convites', error));
         state.wedding = await db.fetchWedding();
     } catch (error) {
         console.error(error);
@@ -199,12 +270,17 @@ async function reload() {
         state.wedding = (await db.fetchWedding()) ?? state.wedding;
         if (!state.wedding) return;
 
-        const [vendors, guests, tasks, runOfShow, members] = await Promise.all([
-            db.fetchVendors(state.wedding.id),
-            db.fetchGuests(state.wedding.id),
-            db.fetchTasks(state.wedding.id),
-            db.fetchRunOfShow(state.wedding.id),
-            db.fetchMembers(state.wedding.id)
+        // As tabelas de valores voltam vazias para a cerimonialista (RLS),
+        // então dá para buscar tudo junto sem perguntar o papel antes.
+        const id = state.wedding.id;
+        const [vendors, guests, tasks, runOfShow, members, privateData, honeymoonItems] = await Promise.all([
+            db.fetchVendors(id),
+            db.fetchGuests(id),
+            db.fetchTasks(id),
+            db.fetchRunOfShow(id),
+            db.fetchMembers(id),
+            db.fetchWeddingPrivate(id),
+            db.fetchHoneymoonItems(id)
         ]);
 
         state.vendors = vendors;
@@ -212,13 +288,11 @@ async function reload() {
         state.tasks = tasks;
         state.runOfShow = runOfShow;
         state.members = members;
+        state.private = privateData;
+        state.honeymoonItems = honeymoonItems;
 
-        try {
-            state.honeymoon = await db.fetchHoneymoon(state.wedding.honeymoon_trip_id);
-        } catch (error) {
-            console.error('Lua de mel indisponível', error);
-            state.honeymoon = null;
-        }
+        const me = members.find((m) => m.user_id === state.userId && m.invite_status === 'accepted');
+        state.role = me?.role ?? (state.wedding.owner_id === state.userId ? 'owner' : 'viewer');
 
         renderAll();
     } catch (error) {
@@ -314,7 +388,7 @@ function financeSummary() {
             .reduce((sum, p) => sum + num(p.amount), 0);
     }
 
-    const budget = num(state.wedding?.estimated_budget);
+    const budget = num(state.private?.estimated_budget);
 
     return {
         budget,
@@ -332,6 +406,8 @@ function guestTotals() {
     let children = 0;
     let confirmed = 0;
     let pending = 0;
+    let invitesSent = 0;
+    let toInvite = 0;
 
     for (const guest of state.guests) {
         const a = num(guest.adults);
@@ -340,9 +416,27 @@ function guestTotals() {
         children += c;
         if (guest.status === 'confirmed') confirmed += a + c;
         if (guest.status === 'pending') pending += a + c;
+        // Convite é por linha da lista (uma família = um convite).
+        if (guest.invite_sent) invitesSent += 1;
+        else if (guest.status !== 'declined') toInvite += 1;
     }
 
-    return { adults, children, total: adults + children, confirmed, pending };
+    return {
+        adults, children, total: adults + children, confirmed, pending,
+        invitesSent, toInvite, invitations: state.guests.length
+    };
+}
+
+function vendorCounts() {
+    const counts = { total: state.vendors.length, ok: 0, pending: 0, urgent: 0 };
+    for (const vendor of state.vendors) counts[vendor.status] = (counts[vendor.status] ?? 0) + 1;
+    return counts;
+}
+
+function sortedVendors(list = state.vendors) {
+    return [...list].sort((a, b) =>
+        VENDOR_STATUS_ORDER.indexOf(a.status) - VENDOR_STATUS_ORDER.indexOf(b.status)
+        || a.name.localeCompare(b.name, 'pt-BR'));
 }
 
 function allPayments() {
@@ -356,13 +450,17 @@ function allPayments() {
 // ==========================================================
 
 function renderAll() {
+    applyRole();
     renderHeader();
     renderOverview();
-    renderFinance();
+    renderVendorDirectory();
+    if (can.seeFinance()) {
+        renderFinance();
+        renderHoneymoon();
+    }
     renderGuests();
     renderChecklist();
     renderRunOfShow();
-    renderHoneymoon();
     renderSettings();
 }
 
@@ -374,7 +472,8 @@ function renderHeader() {
     const parts = [];
     if (wedding.wedding_date) parts.push(formatDate(wedding.wedding_date));
     if (wedding.city) parts.push(wedding.city);
-    $('wedding-subtitle').textContent = parts.join(' · ') || 'Defina a data em Configurações';
+    $('wedding-subtitle').textContent = parts.join(' · ')
+        || (can.editWedding() ? 'Defina a data em Configurações' : 'Data a definir');
 
     document.title = `${names} | Nosso Casório`;
 
@@ -403,7 +502,9 @@ function startCountdown(isoDate, ceremonyTime) {
     if (!target) {
         write('--', '--', '--', '--');
         $('countdown-label').textContent = 'Contagem regressiva';
-        $('countdown-date').textContent = 'Cadastre a data em Configurações.';
+        $('countdown-date').textContent = can.editWedding()
+            ? 'Cadastre a data em Configurações.'
+            : 'Data ainda não definida.';
         return;
     }
 
@@ -412,8 +513,10 @@ function startCountdown(isoDate, ceremonyTime) {
         target.setHours(hour || 0, minute || 0, 0, 0);
     }
 
-    $('countdown-date').textContent = formatLongDate(isoDate) +
-        (ceremonyTime ? ` às ${formatTime(ceremonyTime)}` : '');
+    const place = [state.wedding.venue, state.wedding.city].filter(Boolean).join(', ');
+    $('countdown-date').textContent = formatLongDate(isoDate)
+        + (ceremonyTime ? ` às ${formatTime(ceremonyTime)}` : '')
+        + (place ? ` · ${place}` : '');
 
     const tick = () => {
         const diff = target.getTime() - Date.now();
@@ -450,76 +553,128 @@ function statCard({ label, value, note, variant = '' }) {
 function renderOverview() {
     const finance = financeSummary();
     const guests = guestTotals();
-    const perGuest = guests.confirmed > 0 ? finance.contracted / guests.confirmed : 0;
+    const vendors = vendorCounts();
+    const doneTasks = state.tasks.filter((t) => t.status === 'done').length;
 
-    const cards = [
-        finance.budget > 0
-            ? {
-                label: 'Orçamento',
-                value: money(finance.budget),
-                note: finance.remainingBudget >= 0
-                    ? `Sobram ${money(finance.remainingBudget)} para contratar`
-                    : `Passou ${money(Math.abs(finance.remainingBudget))} do previsto`,
-                variant: finance.remainingBudget >= 0 ? 'accent' : 'bad'
+    $('overview-sub').textContent = can.seeFinance()
+        ? 'Onde o dinheiro está e o que vem pela frente.'
+        : 'O que já está certo e o que vem pela frente.';
+
+    let cards;
+    if (can.seeFinance()) {
+        const perGuest = guests.confirmed > 0 ? finance.contracted / guests.confirmed : 0;
+        cards = [
+            finance.budget > 0
+                ? {
+                    label: 'Orçamento',
+                    value: money(finance.budget),
+                    note: finance.remainingBudget >= 0
+                        ? `Sobram ${money(finance.remainingBudget)} para contratar`
+                        : `Passou ${money(Math.abs(finance.remainingBudget))} do previsto`,
+                    variant: finance.remainingBudget >= 0 ? 'accent' : 'bad'
+                }
+                : { label: 'Orçamento', value: 'Não definido', note: 'Defina em Configurações' },
+            { label: 'Total contratado', value: money(finance.contracted), note: `${vendors.total} fornecedor(es)` },
+            { label: 'Já pago', value: money(finance.paid), variant: 'good' },
+            {
+                label: 'Falta pagar',
+                value: money(finance.pending),
+                note: finance.overdue > 0 ? `${money(finance.overdue)} em atraso` : 'Nada em atraso',
+                variant: finance.overdue > 0 ? 'bad' : ''
+            },
+            { label: 'Confirmados', value: String(guests.confirmed), note: `${guests.total} convidados no total` },
+            {
+                label: 'Custo por confirmado',
+                value: guests.confirmed > 0 ? money(perGuest) : '—',
+                note: guests.confirmed > 0 ? 'Contratado ÷ confirmados' : 'Confirme convidados'
             }
-            : { label: 'Orçamento', value: 'Não definido', note: 'Defina em Configurações' },
-        { label: 'Total contratado', value: money(finance.contracted), note: `${state.vendors.length} fornecedor(es)` },
-        { label: 'Já pago', value: money(finance.paid), variant: 'good' },
-        {
-            label: 'Falta pagar',
-            value: money(finance.pending),
-            note: finance.overdue > 0 ? `${money(finance.overdue)} em atraso` : 'Nada em atraso',
-            variant: finance.overdue > 0 ? 'bad' : ''
-        },
-        { label: 'Confirmados', value: String(guests.confirmed), note: `${guests.total} convidados no total` },
-        {
-            label: 'Custo por confirmado',
-            value: guests.confirmed > 0 ? money(perGuest) : '—',
-            note: guests.confirmed > 0 ? 'Contratado ÷ confirmados' : 'Confirme convidados'
-        }
-    ];
+        ];
+    } else {
+        cards = [
+            { label: 'Convidados', value: String(guests.total), note: `${guests.adults} adultos · ${guests.children} crianças`, variant: 'accent' },
+            { label: 'Confirmados', value: String(guests.confirmed), note: `${guests.pending} sem resposta`, variant: 'good' },
+            {
+                label: 'Convites a enviar',
+                value: String(guests.toInvite),
+                note: `${guests.invitesSent} de ${guests.invitations} enviados`,
+                variant: guests.toInvite > 0 ? 'bad' : ''
+            },
+            {
+                label: 'Fornecedores urgentes',
+                value: String(vendors.urgent),
+                note: `${vendors.pending} com algo a acertar`,
+                variant: vendors.urgent > 0 ? 'bad' : ''
+            },
+            { label: 'Fornecedores certos', value: `${vendors.ok}/${vendors.total}`, variant: 'good' },
+            { label: 'Checklist', value: `${doneTasks}/${state.tasks.length}`, note: 'tarefas concluídas' }
+        ];
+    }
 
     $('overview-stats').innerHTML = cards.map(statCard).join('');
 
-    // Próximos pagamentos
-    const upcoming = allPayments()
-        .filter((p) => !p.is_paid && p.due_date)
-        .sort((a, b) => a.due_date.localeCompare(b.due_date))
-        .slice(0, 6);
-
-    $('upcoming-payments').innerHTML = upcoming.length
-        ? upcoming.map((payment) => {
-            const overdue = isOverdue(payment);
+    // Fornecedores que não estão certos, urgentes primeiro.
+    const attention = sortedVendors(state.vendors.filter((v) => v.status !== 'ok')).slice(0, 6);
+    $('overview-vendors').innerHTML = attention.length
+        ? attention.map((vendor) => {
+            const status = VENDOR_STATUS[vendor.status] ?? VENDOR_STATUS.pending;
+            const detail = vendor.next_step || CATEGORY_LABELS[vendor.category] || '';
             return `
                 <div class="upcoming-row">
                     <div>
-                        <strong>${escapeHtml(payment.vendorName)}</strong>
-                        <small>${escapeHtml(payment.description)} · ${formatDate(payment.due_date)}</small>
+                        <strong>${escapeHtml(vendor.name)}</strong>
+                        <small>${escapeHtml(detail)}</small>
                     </div>
-                    <div style="text-align:right;">
-                        <strong class="money">${money(payment.amount)}</strong><br>
-                        <span class="badge ${overdue ? 'danger' : 'neutral'}">
-                            ${overdue ? 'Atrasado' : 'A vencer'}
-                        </span>
-                    </div>
+                    <span class="badge ${status.badge}">${status.label}</span>
                 </div>`;
         }).join('')
-        : '<p class="empty-state">Nenhum pagamento em aberto.</p>';
+        : `<p class="empty-state">${vendors.total
+            ? 'Todos os fornecedores estão certos.'
+            : 'Nenhum fornecedor cadastrado ainda.'}</p>`;
+
+    // Próximos pagamentos (só o casal)
+    if (can.seeFinance()) {
+        const upcoming = allPayments()
+            .filter((p) => !p.is_paid && p.due_date)
+            .sort((a, b) => a.due_date.localeCompare(b.due_date))
+            .slice(0, 6);
+
+        $('upcoming-payments').innerHTML = upcoming.length
+            ? upcoming.map((payment) => {
+                const overdue = isOverdue(payment);
+                return `
+                    <div class="upcoming-row">
+                        <div>
+                            <strong>${escapeHtml(payment.vendorName)}</strong>
+                            <small>${escapeHtml(payment.description)} · ${formatDate(payment.due_date)}</small>
+                        </div>
+                        <div style="text-align:right;">
+                            <strong class="money">${money(payment.amount)}</strong><br>
+                            <span class="badge ${overdue ? 'danger' : 'neutral'}">
+                                ${overdue ? 'Atrasado' : 'A vencer'}
+                            </span>
+                        </div>
+                    </div>`;
+            }).join('')
+            : '<p class="empty-state">Nenhum pagamento em aberto.</p>';
+    }
 
     // Barras de progresso
-    const doneTasks = state.tasks.filter((t) => t.status === 'done').length;
-    const taskPercent = state.tasks.length ? (doneTasks / state.tasks.length) * 100 : 0;
-    const payPercent = finance.scheduled > 0 ? (finance.paid / finance.scheduled) * 100 : 0;
-    const rsvpPercent = guests.total > 0 ? (guests.confirmed / guests.total) * 100 : 0;
+    const percent = (part, whole) => (whole > 0 ? (part / whole) * 100 : 0);
 
     $('overview-progress').innerHTML = [
-        meter('Pagamentos quitados', `${Math.round(payPercent)}%`, payPercent),
-        meter('Checklist', `${doneTasks}/${state.tasks.length}`, taskPercent),
-        meter('Confirmações', `${guests.confirmed}/${guests.total}`, rsvpPercent),
-        finance.budget > 0
+        can.seeFinance()
+            ? meter('Pagamentos quitados', `${Math.round(percent(finance.paid, finance.scheduled))}%`,
+                percent(finance.paid, finance.scheduled))
+            : '',
+        meter('Fornecedores certos', `${vendors.ok}/${vendors.total}`, percent(vendors.ok, vendors.total)),
+        meter('Convites enviados', `${guests.invitesSent}/${guests.invitations}`,
+            percent(guests.invitesSent, guests.invitations)),
+        meter('Confirmações', `${guests.confirmed}/${guests.total}`, percent(guests.confirmed, guests.total)),
+        meter('Checklist', `${doneTasks}/${state.tasks.length}`, percent(doneTasks, state.tasks.length)),
+        can.seeFinance() && finance.budget > 0
             ? meter('Orçamento comprometido',
-                `${Math.round((finance.contracted / finance.budget) * 100)}%`,
-                (finance.contracted / finance.budget) * 100,
+                `${Math.round(percent(finance.contracted, finance.budget))}%`,
+                percent(finance.contracted, finance.budget),
                 finance.contracted > finance.budget)
             : ''
     ].join('');
@@ -537,6 +692,78 @@ function meter(label, value, percent, danger = false) {
         </div>`;
 }
 
+// ---------- Fornecedores (ficha, um por um) ----------
+
+function renderVendorDirectory() {
+    const counts = vendorCounts();
+
+    $('vendor-stats').innerHTML = [
+        { label: 'Fornecedores', value: String(counts.total), variant: 'accent' },
+        { label: 'Tudo certo', value: String(counts.ok), variant: 'good' },
+        { label: 'Falta acertar', value: String(counts.pending) },
+        {
+            label: 'Urgentes',
+            value: String(counts.urgent),
+            variant: counts.urgent > 0 ? 'bad' : '',
+            note: counts.urgent > 0 ? 'Resolver primeiro' : 'Nada urgente'
+        }
+    ].map(statCard).join('');
+
+    syncFilterChips('vendor-filters', state.vendorFilter);
+
+    const visible = sortedVendors(state.vendors.filter((vendor) =>
+        state.vendorFilter === 'all' || vendor.status === state.vendorFilter));
+
+    $('vendor-directory').innerHTML = visible.length
+        ? visible.map(renderVendorRow).join('')
+        : `<p class="empty-state">${state.vendors.length
+            ? 'Nenhum fornecedor neste filtro.'
+            : 'Nenhum fornecedor cadastrado ainda. Use o formulário acima.'}</p>`;
+}
+
+function renderVendorRow(vendor) {
+    const status = VENDOR_STATUS[vendor.status] ?? VENDOR_STATUS.pending;
+    const details = [
+        CATEGORY_LABELS[vendor.category] ?? vendor.category,
+        vendor.contact_name ? `falar com ${vendor.contact_name}` : null,
+        vendor.arrival_time ? `chega às ${formatTime(vendor.arrival_time)}` : null
+    ].filter(Boolean).join(' · ');
+
+    const links = [];
+    if (vendor.phone) {
+        links.push(`<a href="tel:${escapeHtml(vendor.phone.replace(/[^\d+]/g, ''))}">${escapeHtml(vendor.phone)}</a>`);
+        const wa = whatsappNumber(vendor.phone);
+        if (wa) links.push(`<a href="https://wa.me/${wa}" target="_blank" rel="noopener">WhatsApp</a>`);
+    }
+    if (vendor.email) {
+        links.push(`<a href="mailto:${escapeHtml(vendor.email)}">${escapeHtml(vendor.email)}</a>`);
+    }
+
+    return `
+        <div class="row-card ${status.row}">
+            <div class="row-main">
+                <strong>${escapeHtml(vendor.name)}</strong>
+                <small>${escapeHtml(details)}</small>
+                ${vendor.next_step ? `<p class="row-note">⚑ ${escapeHtml(vendor.next_step)}</p>` : ''}
+                ${vendor.notes ? `<p class="row-note muted">${escapeHtml(vendor.notes)}</p>` : ''}
+                ${links.length ? `<div class="contact-links">${links.join('')}</div>` : ''}
+            </div>
+            <div class="row-actions">
+                <span class="badge ${status.badge}">${status.label}</span>
+                <select class="input btn-sm compact-select" data-action="vendor-status" data-id="${vendor.id}"
+                        aria-label="Situação de ${escapeHtml(vendor.name)}">
+                    ${statusOptions(VENDOR_STATUS, vendor.status)}
+                </select>
+                <button class="icon-btn edit" data-action="edit-contact" data-id="${vendor.id}" title="Editar">✎</button>
+                ${can.editWedding()
+            ? `<button class="icon-btn delete" data-action="delete-vendor" data-id="${vendor.id}" title="Excluir">✕</button>`
+            : ''}
+            </div>
+        </div>`;
+}
+
+// ---------- Valores ----------
+
 function renderFinance() {
     const finance = financeSummary();
 
@@ -552,7 +779,6 @@ function renderFinance() {
         }
     ].map(statCard).join('');
 
-    // Lista de fornecedores
     $('vendors-list').innerHTML = state.vendors.length
         ? state.vendors.map(renderVendorCard).join('')
         : '<p class="empty-state">Nenhum fornecedor cadastrado ainda. Use o formulário acima.</p>';
@@ -563,7 +789,24 @@ function renderFinance() {
 function renderVendorCard(vendor) {
     const totals = vendorTotals(vendor);
     const category = CATEGORY_LABELS[vendor.category] ?? vendor.category;
-    const meta = [category, vendor.payment_method, vendor.notes].filter(Boolean).join(' · ');
+
+    // Fornecedor cadastrado só na aba Fornecedores, ainda sem contrato.
+    if (!vendor.has_contract && !(vendor.payments ?? []).length) {
+        return `
+            <article class="vendor-card">
+                <header class="vendor-head">
+                    <div>
+                        <h3 class="vendor-name">${escapeHtml(vendor.name)}</h3>
+                        <p class="vendor-meta">${escapeHtml(category)} · sem valores lançados</p>
+                    </div>
+                    <div class="vendor-actions">
+                        <button class="btn btn-sm" data-action="edit-vendor" data-id="${vendor.id}">Lançar valores</button>
+                    </div>
+                </header>
+            </article>`;
+    }
+
+    const meta = [category, vendor.payment_method, vendor.contract_notes].filter(Boolean).join(' · ');
 
     const payments = (vendor.payments ?? []).map((payment) => {
         const overdue = isOverdue(payment);
@@ -699,6 +942,18 @@ function renderCashflow() {
     }).join('');
 }
 
+// ---------- Convidados ----------
+
+function guestMatchesFilter(guest) {
+    switch (state.guestFilter) {
+        case 'to-invite': return !guest.invite_sent && guest.status !== 'declined';
+        case 'pending':
+        case 'confirmed':
+        case 'declined': return guest.status === state.guestFilter;
+        default: return true;
+    }
+}
+
 function renderGuests() {
     const totals = guestTotals();
 
@@ -706,22 +961,31 @@ function renderGuests() {
         { label: 'Total de pessoas', value: String(totals.total), variant: 'accent' },
         { label: 'Confirmados', value: String(totals.confirmed), variant: 'good' },
         { label: 'Pendentes', value: String(totals.pending) },
-        { label: 'Adultos / crianças', value: `${totals.adults} / ${totals.children}` }
+        { label: 'Adultos / crianças', value: `${totals.adults} / ${totals.children}` },
+        {
+            label: 'Convites a enviar',
+            value: String(totals.toInvite),
+            note: `${totals.invitesSent} de ${totals.invitations} enviados`,
+            variant: totals.toInvite > 0 ? 'bad' : ''
+        }
     ].map(statCard).join('');
+
+    syncFilterChips('guest-filters', state.guestFilter);
 
     const groomsmen = [];
     const others = [];
 
     for (const guest of state.guests) {
+        if (!guestMatchesFilter(guest)) continue;
         (guest.group_name === 'Padrinhos' ? groomsmen : others).push(renderGuestRow(guest));
     }
 
-    $('padrinhos-list').innerHTML = groomsmen.length
-        ? groomsmen.join('')
-        : '<p class="empty-state">Nenhum padrinho cadastrado.</p>';
-    $('guests-list').innerHTML = others.length
-        ? others.join('')
-        : '<p class="empty-state">Nenhum convidado cadastrado.</p>';
+    const empty = (what) => (state.guestFilter === 'all'
+        ? `<p class="empty-state">Nenhum ${what} cadastrado.</p>`
+        : '<p class="empty-state">Ninguém neste filtro.</p>');
+
+    $('padrinhos-list').innerHTML = groomsmen.length ? groomsmen.join('') : empty('padrinho');
+    $('guests-list').innerHTML = others.length ? others.join('') : empty('convidado');
 
     renderDrinks();
 }
@@ -735,9 +999,11 @@ function renderGuestRow(guest) {
         guest.phone
     ].filter(Boolean).join(' · ');
 
-    const options = Object.entries(GUEST_STATUS).map(([value, info]) =>
-        `<option value="${value}" ${guest.status === value ? 'selected' : ''}>${info.label}</option>`
-    ).join('');
+    const inviteButton = guest.invite_sent
+        ? `<button class="btn btn-sm invite-toggle sent" data-action="toggle-invite" data-id="${guest.id}"
+                   title="Clique para desmarcar">✉ Convite enviado</button>`
+        : `<button class="btn btn-sm invite-toggle" data-action="toggle-invite" data-id="${guest.id}"
+                   title="Marcar que o convite já foi entregue">Marcar convite enviado</button>`;
 
     return `
         <div class="row-card ${guest.status}">
@@ -746,10 +1012,11 @@ function renderGuestRow(guest) {
                 <small>${escapeHtml(details)}</small>
             </div>
             <div class="row-actions">
+                ${inviteButton}
                 <span class="badge ${status.badge}">${status.label}</span>
-                <select class="input btn-sm" style="width:auto;padding:5px 26px 5px 9px;"
+                <select class="input btn-sm compact-select"
                         data-action="guest-status" data-id="${guest.id}" aria-label="Status de ${escapeHtml(guest.name)}">
-                    ${options}
+                    ${statusOptions(GUEST_STATUS, guest.status)}
                 </select>
                 <button class="icon-btn edit" data-action="edit-guest" data-id="${guest.id}" title="Editar">✎</button>
                 <button class="icon-btn delete" data-action="delete-guest" data-id="${guest.id}" title="Excluir">✕</button>
@@ -779,6 +1046,14 @@ function renderDrinks() {
     ].map(statCard).join('');
 }
 
+function syncFilterChips(containerId, active) {
+    $(containerId).querySelectorAll('[data-filter]').forEach((chip) => {
+        chip.classList.toggle('active', chip.dataset.filter === active);
+    });
+}
+
+// ---------- Checklist e roteiro ----------
+
 function renderChecklist() {
     const done = state.tasks.filter((task) => task.status === 'done').length;
     const percent = state.tasks.length ? Math.round((done / state.tasks.length) * 100) : 0;
@@ -790,9 +1065,6 @@ function renderChecklist() {
     $('checklist-list').innerHTML = state.tasks.length
         ? state.tasks.map((task) => {
             const status = TASK_STATUS[task.status] ?? TASK_STATUS.pending;
-            const options = Object.entries(TASK_STATUS).map(([value, info]) =>
-                `<option value="${value}" ${task.status === value ? 'selected' : ''}>${info.label}</option>`
-            ).join('');
             const overdue = task.status !== 'done' && task.due_date && task.due_date < todayIso();
 
             return `
@@ -807,9 +1079,9 @@ function renderChecklist() {
                         <span class="badge ${overdue ? 'danger' : status.badge}">
                             ${overdue ? 'Vencido' : status.label}
                         </span>
-                        <select class="input btn-sm" style="width:auto;padding:5px 26px 5px 9px;"
+                        <select class="input btn-sm compact-select"
                                 data-action="task-status" data-id="${task.id}"
-                                aria-label="Status de ${escapeHtml(task.title)}">${options}</select>
+                                aria-label="Status de ${escapeHtml(task.title)}">${statusOptions(TASK_STATUS, task.status)}</select>
                         <button class="icon-btn delete" data-action="delete-task" data-id="${task.id}"
                                 title="Excluir">✕</button>
                     </div>
@@ -832,152 +1104,145 @@ function renderRunOfShow() {
                 </div>
             </div>`).join('')
         : '<p class="empty-state">Nenhum momento no roteiro ainda.</p>';
-}
 
-function renderHoneymoon() {
-    const container = $('honeymoon-content');
-    const trip = state.honeymoon;
+    const arrivals = state.vendors
+        .filter((vendor) => vendor.arrival_time)
+        .sort((a, b) => String(a.arrival_time).localeCompare(String(b.arrival_time)));
 
-    if (!trip) {
-        container.innerHTML = `
-            <p class="empty-state">
-                Nenhuma viagem vinculada. Cadastre a lua de mel no app de viagem e ela aparece aqui.
-            </p>`;
-        return;
-    }
-
-    const expenses = trip.expenses ?? [];
-    const planned = expenses.reduce((sum, e) => sum + num(e.planned_amount ?? e.actual_amount), 0);
-    const actual = expenses.reduce((sum, e) => sum + num(e.actual_amount ?? e.planned_amount), 0);
-    const paid = expenses.reduce((sum, e) => sum + num(e.paid_amount), 0);
-
-    const period = trip.start_date && trip.end_date
-        ? `${formatDate(trip.start_date)} a ${formatDate(trip.end_date)}`
-        : 'Datas a definir';
-
-    const destinations = (trip.destinations ?? []).map((destination, index) => `
-        <span class="chip"><span class="chip-index">${index + 1}</span>${escapeHtml(destination.city)}</span>
-    `).join('');
-
-    const expenseRows = expenses.length
-        ? expenses.map((expense) => {
-            const total = num(expense.actual_amount ?? expense.planned_amount);
-            const paidAmount = num(expense.paid_amount);
-            const settled = paidAmount >= total - 0.005 && total > 0;
+    $('vendor-arrivals').innerHTML = arrivals.length
+        ? arrivals.map((vendor) => {
+            const status = VENDOR_STATUS[vendor.status] ?? VENDOR_STATUS.pending;
+            const detail = [CATEGORY_LABELS[vendor.category], vendor.contact_name, vendor.phone]
+                .filter(Boolean).join(' · ');
             return `
-                <div class="row-card ${settled ? 'done' : 'pending'}">
-                    <div class="row-main">
-                        <strong>${escapeHtml(expense.description)}</strong>
-                        <small>Pago ${money(paidAmount)} de ${money(total)}</small>
+                <div class="upcoming-row">
+                    <div>
+                        <strong>${formatTime(vendor.arrival_time)} · ${escapeHtml(vendor.name)}</strong>
+                        <small>${escapeHtml(detail)}</small>
                     </div>
-                    <span class="badge ${settled ? 'success' : 'warning'}">
-                        ${settled ? 'Quitado' : money(total - paidAmount) + ' em aberto'}
-                    </span>
+                    <span class="badge ${status.badge}">${status.label}</span>
                 </div>`;
         }).join('')
-        : '<p class="empty-state">Nenhum gasto lançado na viagem.</p>';
+        : '<p class="empty-state">Nenhum horário de chegada definido ainda.</p>';
+}
 
-    const checklists = (trip.checklists ?? []).map((list) => {
-        const items = (list.checklist_items ?? []).map((item) => `
-            <div class="check-row ${item.is_done ? 'done' : ''}">
-                <input type="checkbox" id="hm-${item.id}" ${item.is_done ? 'checked' : ''}
-                       data-action="toggle-honeymoon-item" data-id="${item.id}">
-                <label for="hm-${item.id}">${escapeHtml(item.title)}</label>
-            </div>`).join('');
+// ---------- Lua de mel ----------
 
-        const doneCount = (list.checklist_items ?? []).filter((i) => i.is_done).length;
+function renderHoneymoon() {
+    const trip = state.private ?? {};
+    const items = state.honeymoonItems;
 
-        return `
-            <div class="panel">
-                <h3 class="panel-title">${escapeHtml(list.title)}
-                    <span class="badge neutral">${doneCount}/${(list.checklist_items ?? []).length}</span>
-                </h3>
-                ${items || '<p class="empty-state">Lista vazia.</p>'}
-            </div>`;
-    }).join('');
+    const planned = items.reduce((sum, item) => sum + num(item.amount), 0);
+    const paid = items.filter((item) => item.is_done).reduce((sum, item) => sum + num(item.amount), 0);
+    const budget = num(trip.honeymoon_budget);
 
-    const stays = (trip.accommodations ?? []).map((stay) => `
-        <div class="row-card">
-            <div class="row-main">
-                <strong>${escapeHtml(stay.name)}</strong>
-                <small>${escapeHtml(stay.address ?? '')}</small>
-            </div>
-            <span class="badge neutral">${money(stay.total_price)}</span>
-        </div>`).join('');
+    const period = trip.honeymoon_start && trip.honeymoon_end
+        ? `${formatDate(trip.honeymoon_start)} a ${formatDate(trip.honeymoon_end)}`
+        : trip.honeymoon_start ? `Ida em ${formatDate(trip.honeymoon_start)}` : 'Datas a definir';
 
-    const flights = (trip.flights ?? []).map((flight) => `
-        <div class="row-card">
-            <div class="row-main">
-                <strong>${escapeHtml(flight.airline ?? 'Voo')} ${escapeHtml(flight.flight_number ?? '')}</strong>
-                <small>${escapeHtml(flight.origin_iata ?? '')} → ${escapeHtml(flight.destination_iata ?? '')}</small>
-            </div>
-            <span class="badge neutral">${money(flight.total_price)}</span>
-        </div>`).join('');
+    $('honeymoon-hero').innerHTML = `
+        <h3>${escapeHtml(trip.honeymoon_destination || 'Destino a definir')}</h3>
+        <p>${period}</p>`;
 
-    container.innerHTML = `
-        <div class="trip-hero">
-            <h3>${escapeHtml(trip.name)}</h3>
-            <p>${escapeHtml(trip.destination_label ?? '')} · ${period} · ${num(trip.travelers_count)} viajante(s)</p>
-            ${destinations ? `<div class="chip-row">${destinations}</div>` : ''}
-        </div>
-
-        <div class="stat-grid">
-            ${[
-            trip.estimated_budget
-                ? { label: 'Orçamento da viagem', value: money(trip.estimated_budget), variant: 'accent' }
-                : { label: 'Orçamento da viagem', value: 'Não definido' },
-            { label: 'Previsto', value: money(planned) },
-            { label: 'Já pago', value: money(paid), variant: 'good' },
-            {
-                label: 'Falta pagar',
-                value: money(Math.max(0, actual - paid)),
-                variant: actual - paid > 0 ? 'bad' : ''
+    $('honeymoon-stats').innerHTML = [
+        budget > 0
+            ? {
+                label: 'Orçamento da viagem',
+                value: money(budget),
+                note: planned > budget ? `Passou ${money(planned - budget)}` : `Sobram ${money(budget - planned)}`,
+                variant: planned > budget ? 'bad' : 'accent'
             }
-        ].map(statCard).join('')}
-        </div>
+            : { label: 'Orçamento da viagem', value: 'Não definido' },
+        { label: 'Previsto', value: money(planned) },
+        { label: 'Já pago', value: money(paid), variant: 'good' },
+        { label: 'Falta pagar', value: money(planned - paid), variant: planned - paid > 0.005 ? 'bad' : '' }
+    ].map(statCard).join('');
 
-        <div class="panel"><h3 class="panel-title">Gastos da viagem</h3>${expenseRows}</div>
-        ${stays ? `<div class="panel"><h3 class="panel-title">Hospedagem</h3>${stays}</div>` : ''}
-        ${flights ? `<div class="panel"><h3 class="panel-title">Voos</h3>${flights}</div>` : ''}
-        ${checklists}`;
+    setIfIdle('hm-destination', trip.honeymoon_destination);
+    setIfIdle('hm-start', trip.honeymoon_start);
+    setIfIdle('hm-end', trip.honeymoon_end);
+    setIfIdle('hm-budget', trip.honeymoon_budget);
+
+    $('honeymoon-items').innerHTML = items.length
+        ? items.map((item) => {
+            const detail = [
+                HONEYMOON_CATEGORY[item.category] ?? item.category,
+                item.amount != null ? money(item.amount) : null,
+                item.due_date ? formatDate(item.due_date) : null
+            ].filter(Boolean).join(' · ');
+
+            return `
+                <div class="row-card ${item.is_done ? 'done' : 'pending'}">
+                    <div class="payment-main">
+                        <input type="checkbox" class="payment-check" ${item.is_done ? 'checked' : ''}
+                               data-action="toggle-honeymoon-item" data-id="${item.id}"
+                               aria-label="Marcar ${escapeHtml(item.title)} como resolvido">
+                        <div class="row-main">
+                            <strong>${escapeHtml(item.title)}</strong>
+                            <small>${escapeHtml(detail)}</small>
+                        </div>
+                    </div>
+                    <div class="row-actions">
+                        <button class="icon-btn delete" data-action="delete-honeymoon-item" data-id="${item.id}"
+                                title="Excluir">✕</button>
+                    </div>
+                </div>`;
+        }).join('')
+        : '<p class="empty-state">Nada lançado ainda. Voo, hotel, passeios, documentos...</p>';
+}
+
+// ---------- Configurações ----------
+
+function setIfIdle(id, value) {
+    const element = $(id);
+    if (element && document.activeElement !== element) element.value = value ?? '';
 }
 
 function renderSettings() {
+    if (!can.editWedding()) return;
     const wedding = state.wedding;
-
-    const setIfIdle = (id, value) => {
-        const element = $(id);
-        if (element && document.activeElement !== element) element.value = value ?? '';
-    };
 
     setIfIdle('w-partner1', wedding.partner1_name);
     setIfIdle('w-partner2', wedding.partner2_name);
     setIfIdle('w-date', wedding.wedding_date);
     setIfIdle('w-time', formatTime(wedding.ceremony_time));
-    setIfIdle('w-budget', wedding.estimated_budget);
+    setIfIdle('w-budget', state.private?.estimated_budget);
     setIfIdle('w-venue', wedding.venue);
     setIfIdle('w-city', wedding.city);
     setIfIdle('w-cover', wedding.cover_image_url);
 
+    const manage = can.manageMembers();
+
     $('members-list').innerHTML = state.members.map((member) => {
         const accepted = member.invite_status === 'accepted';
-        const name = member.display_name || member.invited_email || 'Membro';
-        const roleLabel = member.role === 'owner' ? 'Dono' : member.role === 'editor' ? 'Edita' : 'Só vê';
+        const isMe = member.user_id === state.userId;
+        const name = isMe ? 'Você' : member.display_name || member.invited_email || 'Membro';
+        const roleLabel = ROLE_LABELS[member.role] ?? member.role;
+        const editableRole = manage && member.role !== 'owner';
+
+        const roleControl = editableRole
+            ? `<select class="input btn-sm compact-select" data-action="member-role" data-id="${member.id}"
+                       aria-label="Acesso de ${escapeHtml(name)}">
+                   <option value="editor" ${member.role === 'editor' ? 'selected' : ''}>Acesso total</option>
+                   <option value="planner" ${member.role === 'planner' ? 'selected' : ''}>Cerimonialista</option>
+               </select>`
+            : '';
 
         return `
             <div class="row-card ${accepted ? 'confirmed' : 'pending'}">
                 <div class="row-main">
                     <strong>${escapeHtml(name)}</strong>
-                    <small>${roleLabel}${accepted ? '' : ` · código: ${escapeHtml(member.invite_token)}`}</small>
+                    <small>${roleLabel}${member.invited_email && !isMe ? ` · ${escapeHtml(member.invited_email)}` : ''}${accepted ? '' : ` · código: ${escapeHtml(member.invite_token)}`}</small>
                 </div>
                 <div class="row-actions">
                     <span class="badge ${accepted ? 'success' : 'warning'}">
-                        ${accepted ? 'Ativo' : 'Convite pendente'}
+                        ${accepted ? 'Ativo' : 'Aguardando a pessoa entrar'}
                     </span>
+                    ${roleControl}
                     ${accepted ? '' : `<button class="btn btn-sm" data-action="copy-invite"
                         data-token="${escapeHtml(member.invite_token)}">Copiar código</button>`}
-                    ${member.role === 'owner' ? '' : `<button class="icon-btn delete" data-action="remove-member"
-                        data-id="${member.id}" title="Remover">✕</button>`}
+                    ${editableRole ? `<button class="icon-btn delete" data-action="remove-member"
+                        data-id="${member.id}" title="Remover acesso">✕</button>` : ''}
                 </div>
             </div>`;
     }).join('') || '<p class="empty-state">Só você tem acesso.</p>';
@@ -987,14 +1252,16 @@ function renderSettings() {
 // Eventos
 // ==========================================================
 
+function showTab(target) {
+    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.target === target));
+    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === target));
+}
+
 function wireEvents() {
     // Navegação
     document.querySelectorAll('.nav-btn[data-target]').forEach((button) => {
         button.addEventListener('click', () => {
-            document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
-            document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
-            button.classList.add('active');
-            $(button.dataset.target).classList.add('active');
+            showTab(button.dataset.target);
             closeMenu();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         });
@@ -1013,10 +1280,13 @@ function wireEvents() {
         window.location.replace('index.html');
     });
 
+    fillCategorySelects();
+    wireContactForm();
     wireVendorForm();
     wireGuestForm();
     wireChecklist();
     wireRunOfShow();
+    wireHoneymoon();
     wireSettings();
 
     // Ações delegadas (funcionam mesmo depois de redesenhar as listas)
@@ -1027,6 +1297,17 @@ function wireEvents() {
         exportFinancePdf(event.currentTarget, state, { financeSummary, vendorTotals, allPayments }));
     $('btn-export-guests').addEventListener('click', (event) =>
         exportGuestsPdf(event.currentTarget, state, { guestTotals }));
+    $('btn-export-vendors').addEventListener('click', (event) =>
+        exportVendorsPdf(event.currentTarget, state, {
+            sortedVendors, vendorCounts, categoryLabels: CATEGORY_LABELS, statusLabels: VENDOR_STATUS
+        }));
+}
+
+function fillCategorySelects() {
+    const options = Object.entries(CATEGORY_LABELS)
+        .map(([value, label]) => `<option value="${value}" ${value === 'other' ? 'selected' : ''}>${label}</option>`)
+        .join('');
+    document.querySelectorAll('select[data-categories]').forEach((select) => { select.innerHTML = options; });
 }
 
 function closeMenu() {
@@ -1036,16 +1317,30 @@ function closeMenu() {
 }
 
 async function onDelegatedClick(event) {
+    const chip = event.target.closest('[data-filter]');
+    if (chip) {
+        const group = chip.closest('.filter-row')?.id;
+        if (group === 'vendor-filters') {
+            state.vendorFilter = chip.dataset.filter;
+            renderVendorDirectory();
+        } else if (group === 'guest-filters') {
+            state.guestFilter = chip.dataset.filter;
+            renderGuests();
+        }
+        return;
+    }
+
     const trigger = event.target.closest('[data-action]');
     if (!trigger) return;
     const { action, id, token } = trigger.dataset;
 
     if (action === 'edit-vendor') return startVendorEdit(id);
+    if (action === 'edit-contact') return startContactEdit(id);
     if (action === 'edit-guest') return startGuestEdit(id);
 
     if (action === 'delete-vendor') {
         const vendor = state.vendors.find((v) => v.id === id);
-        if (!confirm(`Excluir "${vendor?.name}" e todas as parcelas dele?`)) return;
+        if (!confirm(`Excluir "${vendor?.name}"? Some da lista de fornecedores e leva junto os valores e as parcelas.`)) return;
         return mutate(() => db.deleteVendor(id), 'Fornecedor excluído.');
     }
 
@@ -1055,10 +1350,21 @@ async function onDelegatedClick(event) {
         return mutate(() => db.deleteGuest(id), 'Convidado removido.');
     }
 
+    if (action === 'toggle-invite') {
+        const guest = state.guests.find((g) => g.id === id);
+        if (!guest) return;
+        return mutate(() => db.updateGuest(id, { invite_sent: !guest.invite_sent }));
+    }
+
     if (action === 'delete-task') return mutate(() => db.deleteTask(id));
     if (action === 'delete-ros') {
         if (!confirm('Excluir este momento do roteiro?')) return;
         return mutate(() => db.deleteRunOfShowItem(id));
+    }
+
+    if (action === 'delete-honeymoon-item') {
+        if (!confirm('Excluir este item da viagem?')) return;
+        return mutate(() => db.deleteHoneymoonItem(id));
     }
 
     if (action === 'remove-member') {
@@ -1069,7 +1375,7 @@ async function onDelegatedClick(event) {
     if (action === 'copy-invite') {
         try {
             await navigator.clipboard.writeText(token);
-            toast('Código copiado. Mande para o seu par.', 'success');
+            toast('Código copiado.', 'success');
         } catch {
             prompt('Copie o código do convite:', token);
         }
@@ -1092,6 +1398,9 @@ async function onDelegatedChange(event) {
         if (amount < 0) return toast('O valor não pode ser negativo.', 'error');
         return mutate(() => db.updatePayment(id, { amount: round2(amount) }));
     }
+    if (action === 'vendor-status') {
+        return mutate(() => db.updateVendor(id, { status: trigger.value }));
+    }
     if (action === 'guest-status') {
         return mutate(() => db.updateGuest(id, { status: trigger.value }));
     }
@@ -1099,21 +1408,78 @@ async function onDelegatedChange(event) {
         return mutate(() => db.updateTask(id, { status: trigger.value }));
     }
     if (action === 'toggle-honeymoon-item') {
-        setSync('saving');
-        try {
-            await db.setHoneymoonItemDone(id, trigger.checked);
-            state.honeymoon = await db.fetchHoneymoon(state.wedding.honeymoon_trip_id);
-            renderHoneymoon();
-            setSync('ok');
-        } catch (error) {
-            console.error(error);
-            setSync('error');
-            toast('Não foi possível atualizar a lista da viagem.', 'error');
-        }
+        return mutate(() => db.updateHoneymoonItem(id, { is_done: trigger.checked }));
+    }
+    if (action === 'member-role') {
+        return mutate(() => db.updateMemberRole(id, trigger.value), 'Acesso atualizado.');
     }
 }
 
-// ---------- Fornecedores ----------
+// ---------- Fornecedores: ficha ----------
+
+function wireContactForm() {
+    $('contact-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const vendor = {
+            name: $('c-name').value.trim(),
+            category: $('c-category').value,
+            status: $('c-status').value,
+            contact_name: $('c-contact').value.trim() || null,
+            phone: $('c-phone').value.trim() || null,
+            email: $('c-email').value.trim() || null,
+            next_step: $('c-next').value.trim() || null,
+            arrival_time: $('c-arrival').value || null,
+            notes: $('c-notes').value.trim() || null
+        };
+
+        if (!vendor.name) return toast('Informe o nome do fornecedor.', 'error');
+
+        const editingId = state.editingContactId;
+        const saved = await mutate(
+            () => editingId
+                ? db.updateVendor(editingId, vendor)
+                : db.createVendor(state.wedding.id, { ...vendor, position: state.vendors.length }),
+            editingId ? 'Fornecedor atualizado.' : 'Fornecedor adicionado.'
+        );
+
+        if (saved) resetContactForm();
+    });
+
+    $('btn-cancel-contact').addEventListener('click', resetContactForm);
+}
+
+function startContactEdit(vendorId) {
+    const vendor = state.vendors.find((v) => v.id === vendorId);
+    if (!vendor) return;
+
+    state.editingContactId = vendorId;
+    $('c-name').value = vendor.name;
+    $('c-category').value = vendor.category ?? 'other';
+    $('c-status').value = vendor.status ?? 'pending';
+    $('c-contact').value = vendor.contact_name ?? '';
+    $('c-phone').value = vendor.phone ?? '';
+    $('c-email').value = vendor.email ?? '';
+    $('c-next').value = vendor.next_step ?? '';
+    $('c-arrival').value = formatTime(vendor.arrival_time);
+    $('c-notes').value = vendor.notes ?? '';
+
+    $('contact-form-title').textContent = `Editando ${vendor.name}`;
+    $('btn-submit-contact').textContent = 'Atualizar';
+    $('btn-cancel-contact').hidden = false;
+    $('contact-form').scrollIntoView({ behavior: 'smooth' });
+}
+
+function resetContactForm() {
+    state.editingContactId = null;
+    $('contact-form').reset();
+    $('c-category').value = 'other';
+    $('contact-form-title').textContent = 'Adicionar fornecedor';
+    $('btn-submit-contact').textContent = 'Adicionar';
+    $('btn-cancel-contact').hidden = true;
+}
+
+// ---------- Fornecedores: valores ----------
 
 /** Monta o carnê: entrada (se houver) + parcelas mensais do restante. */
 function buildPayments({ total, entry, installments, firstDate }) {
@@ -1169,9 +1535,11 @@ function readVendorForm() {
     return {
         vendor: {
             name: $('v-name').value.trim(),
-            category: $('v-category').value,
-            payment_method: $('v-method').value.trim() || null,
+            category: $('v-category').value
+        },
+        contract: {
             total_amount: total,
+            payment_method: $('v-method').value.trim() || null,
             notes: $('v-notes').value.trim() || null
         },
         payments: buildPayments({ total, entry, installments, firstDate }),
@@ -1203,7 +1571,7 @@ function wireVendorForm() {
 
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const { vendor, payments, total, entry } = readVendorForm();
+        const { vendor, contract, payments, total, entry } = readVendorForm();
 
         if (!vendor.name) return toast('Informe o nome do fornecedor.', 'error');
         if (total <= 0) return toast('Informe um valor total maior que zero.', 'error');
@@ -1218,8 +1586,8 @@ function wireVendorForm() {
 
         const saved = await mutate(
             () => editingId
-                ? db.updateVendor(editingId, vendor, scheduleChanged ? payments : null)
-                : db.createVendor(state.wedding.id, vendor, payments),
+                ? db.updateVendor(editingId, vendor, contract, scheduleChanged ? payments : null)
+                : db.createVendor(state.wedding.id, { ...vendor, position: state.vendors.length }, contract, payments),
             editingId ? 'Fornecedor atualizado.' : 'Fornecedor cadastrado.'
         );
 
@@ -1241,22 +1609,25 @@ function startVendorEdit(vendorId) {
     $('v-name').value = vendor.name;
     $('v-category').value = vendor.category ?? 'other';
     $('v-method').value = vendor.payment_method ?? '';
-    $('v-total').value = vendor.total_amount ?? '';
-    $('v-notes').value = vendor.notes ?? '';
+    $('v-total').value = vendor.has_contract ? vendor.total_amount : '';
+    $('v-notes').value = vendor.contract_notes ?? '';
     $('v-entry').value = entryPayment ? entryPayment.amount : '';
-    $('v-installments').value = installments.length;
+    $('v-installments').value = vendor.has_contract ? installments.length : 1;
     $('v-date').value = payments[0]?.due_date ?? '';
 
     // Guarda o estado inicial dos campos: se nenhum deles mudar, o carnê
     // fica intacto, preservando datas e valores ajustados na mão.
     state.editingVendorInputs = scheduleInputs();
 
-    $('vendor-form-title').textContent = `Editando ${vendor.name}`;
+    $('vendor-form-title').textContent = vendor.has_contract
+        ? `Editando ${vendor.name}`
+        : `Lançando valores de ${vendor.name}`;
     $('btn-submit-vendor').textContent = 'Atualizar';
     $('btn-cancel-vendor').hidden = false;
-    $('vendor-form-hint').textContent =
-        'Mexer em valor total, entrada, nº de parcelas ou 1º vencimento recria o carnê inteiro. '
-        + 'Para ajustar só uma parcela, edite direto na lista abaixo.';
+    $('vendor-form-hint').textContent = vendor.has_contract
+        ? 'Mexer em valor total, entrada, nº de parcelas ou 1º vencimento recria o carnê inteiro. '
+        + 'Para ajustar só uma parcela, edite direto na lista abaixo.'
+        : '';
 
     $('finance').scrollIntoView({ behavior: 'smooth' });
 }
@@ -1265,8 +1636,9 @@ function resetVendorForm() {
     state.editingVendorId = null;
     state.editingVendorInputs = null;
     $('vendor-form').reset();
+    $('v-category').value = 'other';
     $('v-installments').value = 1;
-    $('vendor-form-title').textContent = 'Cadastrar fornecedor';
+    $('vendor-form-title').textContent = 'Lançar contrato';
     $('btn-submit-vendor').textContent = 'Salvar fornecedor';
     $('btn-cancel-vendor').hidden = true;
     $('vendor-form-hint').textContent = '';
@@ -1291,6 +1663,7 @@ function wireGuestForm() {
             adults: parseInt($('g-adults').value, 10) || 0,
             children: parseInt($('g-children').value, 10) || 0,
             status: $('g-status').value,
+            invite_sent: $('g-invite-sent').checked,
             beverages: {
                 beer: parseInt($('drink-beer').value, 10) || 0,
                 cocktail: parseInt($('drink-cocktail').value, 10) || 0,
@@ -1330,6 +1703,7 @@ function startGuestEdit(guestId) {
     $('g-adults').value = guest.adults;
     $('g-children').value = guest.children;
     $('g-status').value = guest.status;
+    $('g-invite-sent').checked = Boolean(guest.invite_sent);
     $('drink-beer').value = drinks.beer ?? 0;
     $('drink-cocktail').value = drinks.cocktail ?? 0;
     $('drink-soda').value = drinks.soda ?? 0;
@@ -1393,6 +1767,46 @@ function wireRunOfShow() {
     });
 }
 
+// ---------- Lua de mel ----------
+
+function wireHoneymoon() {
+    $('trip-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const start = $('hm-start').value || null;
+        const end = $('hm-end').value || null;
+        if (start && end && end < start) return toast('A volta não pode ser antes da ida.', 'error');
+
+        await mutate(() => db.updateWeddingPrivate(state.wedding.id, {
+            honeymoon_destination: $('hm-destination').value.trim() || null,
+            honeymoon_start: start,
+            honeymoon_end: end,
+            honeymoon_budget: $('hm-budget').value ? round2($('hm-budget').value) : null
+        }), 'Viagem salva.');
+    });
+
+    $('honeymoon-item-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const title = $('hm-item-title').value.trim();
+        if (!title) return;
+
+        const amount = $('hm-item-amount').value;
+        const saved = await mutate(() => db.createHoneymoonItem(state.wedding.id, {
+            title,
+            category: $('hm-item-category').value,
+            amount: amount === '' ? null : round2(amount),
+            due_date: $('hm-item-date').value || null,
+            position: state.honeymoonItems.length
+        }));
+
+        if (saved) {
+            $('honeymoon-item-form').reset();
+            $('hm-item-category').value = 'other';
+            $('hm-item-title').focus();
+        }
+    });
+}
+
 // ---------- Configurações ----------
 
 function wireSettings() {
@@ -1404,7 +1818,6 @@ function wireSettings() {
             partner2_name: $('w-partner2').value.trim(),
             wedding_date: $('w-date').value || null,
             ceremony_time: $('w-time').value || null,
-            estimated_budget: $('w-budget').value ? num($('w-budget').value) : null,
             venue: $('w-venue').value.trim() || null,
             city: $('w-city').value.trim() || null,
             cover_image_url: $('w-cover').value.trim() || null
@@ -1414,7 +1827,13 @@ function wireSettings() {
             return toast('Preencha os dois nomes.', 'error');
         }
 
-        await mutate(() => db.updateWedding(state.wedding.id, patch), 'Dados salvos.');
+        // O orçamento mora numa tabela à parte, que a cerimonialista não vê.
+        const budget = $('w-budget').value ? num($('w-budget').value) : null;
+
+        await mutate(async () => {
+            await db.updateWedding(state.wedding.id, patch);
+            await db.updateWeddingPrivate(state.wedding.id, { estimated_budget: budget });
+        }, 'Dados salvos.');
     });
 
     $('invite-form').addEventListener('submit', async (event) => {
@@ -1422,9 +1841,10 @@ function wireSettings() {
         const email = $('invite-email').value.trim();
         if (!email) return;
 
+        const role = $('invite-role').value;
         const saved = await mutate(
-            () => db.inviteMember(state.wedding.id, email),
-            'Convite gerado. Copie o código e mande para ela.'
+            () => db.inviteMember(state.wedding.id, { email, role }),
+            'Convite criado. Peça para a pessoa criar a conta com esse e-mail.'
         );
 
         if (saved) $('invite-form').reset();

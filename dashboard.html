@@ -26,11 +26,13 @@
         <div class="gate-card">
             <h1>Quase lá</h1>
             <p class="gate-intro">Sua conta ainda não está ligada a um casamento.</p>
+            <p class="gate-intro">Foi convidado(a)? Confira se criou a conta com o mesmo e-mail do convite e se já
+                clicou no link de confirmação que chegou no seu e-mail. Depois disso, é só entrar de novo.</p>
 
             <section class="gate-block">
                 <h2>Tenho um código de convite</h2>
                 <div class="input-group">
-                    <label for="invite-code">Código recebido do seu par</label>
+                    <label for="invite-code">Código do convite</label>
                     <input type="text" id="invite-code" class="input" placeholder="Cole o código aqui">
                 </div>
                 <button type="button" id="btn-accept-invite" class="btn btn-primary btn-block">Entrar no
@@ -79,16 +81,21 @@
             <nav class="nav">
                 <button class="nav-btn active" data-target="overview"><span class="nav-icon">◆</span> Visão
                     geral</button>
-                <button class="nav-btn" data-target="finance"><span class="nav-icon">$</span> Valores</button>
+                <button class="nav-btn" data-target="vendors"><span class="nav-icon">☎</span> Fornecedores</button>
+                <button class="nav-btn" data-target="finance" data-finance><span class="nav-icon">$</span>
+                    Valores</button>
                 <button class="nav-btn" data-target="guests"><span class="nav-icon">♥</span> Convidados</button>
                 <button class="nav-btn" data-target="checklist"><span class="nav-icon">✓</span> Checklist</button>
                 <button class="nav-btn" data-target="runofshow"><span class="nav-icon">◷</span> Roteiro do
                     dia</button>
-                <button class="nav-btn" data-target="honeymoon"><span class="nav-icon">✈</span> Lua de mel</button>
-                <button class="nav-btn" data-target="settings"><span class="nav-icon">⚙</span> Configurações</button>
+                <button class="nav-btn" data-target="honeymoon" data-finance><span class="nav-icon">✈</span> Lua de
+                    mel</button>
+                <button class="nav-btn" data-target="settings" data-couple><span class="nav-icon">⚙</span>
+                    Configurações</button>
             </nav>
 
             <div class="sidebar-foot">
+                <span id="role-label" class="role-label"></span>
                 <span id="sync-status" class="sync-status">Sincronizado</span>
                 <button type="button" id="btn-logout" class="link-btn">Sair</button>
             </div>
@@ -102,7 +109,7 @@
             <section id="overview" class="tab active">
                 <header class="tab-head">
                     <h2 class="tab-title">Visão geral</h2>
-                    <p class="tab-sub">Onde o dinheiro está e o que vem pela frente.</p>
+                    <p class="tab-sub" id="overview-sub">Onde o dinheiro está e o que vem pela frente.</p>
                 </header>
 
                 <div class="countdown-panel">
@@ -120,18 +127,105 @@
 
                 <div class="split-grid">
                     <div class="panel">
-                        <h3 class="panel-title">Próximos pagamentos</h3>
-                        <div id="upcoming-payments"></div>
+                        <h3 class="panel-title">Fornecedores que precisam de atenção</h3>
+                        <div id="overview-vendors"></div>
                     </div>
                     <div class="panel">
                         <h3 class="panel-title">Como estamos</h3>
                         <div id="overview-progress"></div>
                     </div>
                 </div>
+
+                <div class="panel" data-finance>
+                    <h3 class="panel-title">Próximos pagamentos</h3>
+                    <div id="upcoming-payments"></div>
+                </div>
+            </section>
+
+            <!-- ============ FORNECEDORES ============ -->
+            <section id="vendors" class="tab">
+                <header class="tab-head">
+                    <h2 class="tab-title">Fornecedores</h2>
+                    <p class="tab-sub">Um por um: com quem falar, o que já está certo e o que está pegando.</p>
+                    <button type="button" id="btn-export-vendors" class="btn btn-ghost btn-sm">Exportar PDF</button>
+                </header>
+
+                <div class="stat-grid" id="vendor-stats"></div>
+
+                <div class="panel form-panel">
+                    <h3 class="panel-title" id="contact-form-title">Adicionar fornecedor</h3>
+                    <form id="contact-form">
+                        <div class="input-row">
+                            <div class="input-group">
+                                <label for="c-name">Fornecedor</label>
+                                <input type="text" id="c-name" class="input" placeholder="Ex: Buffet Villa" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="c-category">Categoria</label>
+                                <select id="c-category" class="input" data-categories></select>
+                            </div>
+                            <div class="input-group">
+                                <label for="c-status">Situação</label>
+                                <select id="c-status" class="input">
+                                    <option value="pending">Falta acertar</option>
+                                    <option value="urgent">Urgente</option>
+                                    <option value="ok">Tudo certo</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="input-row">
+                            <div class="input-group">
+                                <label for="c-contact">Falar com</label>
+                                <input type="text" id="c-contact" class="input" placeholder="Nome do contato">
+                            </div>
+                            <div class="input-group">
+                                <label for="c-phone">Telefone / WhatsApp</label>
+                                <input type="tel" id="c-phone" class="input" placeholder="(00) 00000-0000">
+                            </div>
+                            <div class="input-group">
+                                <label for="c-email">E-mail</label>
+                                <input type="email" id="c-email" class="input" placeholder="contato@fornecedor.com">
+                            </div>
+                        </div>
+
+                        <div class="input-row">
+                            <div class="input-group">
+                                <label for="c-next">O que falta resolver</label>
+                                <input type="text" id="c-next" class="input"
+                                    placeholder="Ex: Confirmar cardápio final até dia 10">
+                            </div>
+                            <div class="input-group">
+                                <label for="c-arrival">Chega no dia às</label>
+                                <input type="time" id="c-arrival" class="input">
+                            </div>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="c-notes">Observações</label>
+                            <input type="text" id="c-notes" class="input"
+                                placeholder="Montagem, necessidades técnicas, etc.">
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" id="btn-submit-contact" class="btn btn-primary">Adicionar</button>
+                            <button type="button" id="btn-cancel-contact" class="btn" hidden>Cancelar</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="filter-row" id="vendor-filters" role="group" aria-label="Filtrar fornecedores">
+                    <button type="button" class="filter-chip active" data-filter="all">Todos</button>
+                    <button type="button" class="filter-chip" data-filter="urgent">Urgentes</button>
+                    <button type="button" class="filter-chip" data-filter="pending">Falta acertar</button>
+                    <button type="button" class="filter-chip" data-filter="ok">Tudo certo</button>
+                </div>
+
+                <div id="vendor-directory"></div>
             </section>
 
             <!-- ============ VALORES ============ -->
-            <section id="finance" class="tab">
+            <section id="finance" class="tab" data-finance>
                 <header class="tab-head">
                     <h2 class="tab-title">Valores</h2>
                     <p class="tab-sub">Fornecedores, contratos e o carnê de cada um.</p>
@@ -141,7 +235,9 @@
                 <div class="stat-grid" id="finance-stats"></div>
 
                 <div class="panel form-panel">
-                    <h3 class="panel-title" id="vendor-form-title">Cadastrar fornecedor</h3>
+                    <h3 class="panel-title" id="vendor-form-title">Lançar contrato</h3>
+                    <p class="form-hint form-hint-top">Fornecedor já está na aba Fornecedores? Clique no ✎ dele na
+                        lista abaixo para lançar os valores, em vez de cadastrar de novo.</p>
                     <form id="vendor-form">
                         <div class="input-row">
                             <div class="input-group">
@@ -150,19 +246,7 @@
                             </div>
                             <div class="input-group">
                                 <label for="v-category">Categoria</label>
-                                <select id="v-category" class="input">
-                                    <option value="buffet">Buffet</option>
-                                    <option value="venue">Espaço / Local</option>
-                                    <option value="photo">Foto e vídeo</option>
-                                    <option value="music">Música / DJ</option>
-                                    <option value="decor">Decoração</option>
-                                    <option value="attire">Traje e beleza</option>
-                                    <option value="cake">Bolo e doces</option>
-                                    <option value="invites">Convites e papelaria</option>
-                                    <option value="transport">Transporte</option>
-                                    <option value="church">Cerimônia</option>
-                                    <option value="other" selected>Outros</option>
-                                </select>
+                                <select id="v-category" class="input" data-categories></select>
                             </div>
                         </div>
 
@@ -195,8 +279,9 @@
                         </div>
 
                         <div class="input-group">
-                            <label for="v-notes">Observações</label>
-                            <input type="text" id="v-notes" class="input" placeholder="Contato, condições, etc.">
+                            <label for="v-notes">Condições do contrato</label>
+                            <input type="text" id="v-notes" class="input"
+                                placeholder="Ex: desconto à vista, multa, o que está incluso">
                         </div>
 
                         <p class="form-hint" id="vendor-form-hint"></p>
@@ -221,7 +306,7 @@
             <section id="guests" class="tab">
                 <header class="tab-head">
                     <h2 class="tab-title">Convidados</h2>
-                    <p class="tab-sub">Quem vem, quantos são e quanto bebem.</p>
+                    <p class="tab-sub">Quem vem, quantos são, quem falta convidar e quanto bebem.</p>
                     <button type="button" id="btn-export-guests" class="btn btn-ghost btn-sm">Exportar PDF</button>
                 </header>
 
@@ -270,6 +355,11 @@
                             </div>
                         </div>
 
+                        <label class="check-inline" for="g-invite-sent">
+                            <input type="checkbox" id="g-invite-sent">
+                            Convite já enviado
+                        </label>
+
                         <fieldset class="drinks-fieldset">
                             <legend>Consumo estimado (pessoas que bebem cada item)</legend>
                             <div class="input-row">
@@ -308,6 +398,14 @@
                     <div class="stat-grid compact" id="drinks-summary"></div>
                     <p class="form-hint">Estimativa: 1,5 L de cerveja, 0,6 L de refrigerante, 0,4 L de suco e 0,5 L de
                         água por pessoa marcada. Só conta quem confirmou presença.</p>
+                </div>
+
+                <div class="filter-row" id="guest-filters" role="group" aria-label="Filtrar convidados">
+                    <button type="button" class="filter-chip active" data-filter="all">Todos</button>
+                    <button type="button" class="filter-chip" data-filter="to-invite">Falta enviar convite</button>
+                    <button type="button" class="filter-chip" data-filter="pending">Sem resposta</button>
+                    <button type="button" class="filter-chip" data-filter="confirmed">Confirmados</button>
+                    <button type="button" class="filter-chip" data-filter="declined">Não vão</button>
                 </div>
 
                 <div class="panel">
@@ -371,19 +469,76 @@
                 <div class="panel">
                     <div class="timeline" id="ros-timeline"></div>
                 </div>
+
+                <div class="panel">
+                    <h3 class="panel-title">Chegada dos fornecedores</h3>
+                    <div id="vendor-arrivals"></div>
+                    <p class="form-hint">O horário de chegada é definido na aba Fornecedores.</p>
+                </div>
             </section>
 
             <!-- ============ LUA DE MEL ============ -->
-            <section id="honeymoon" class="tab">
+            <section id="honeymoon" class="tab" data-finance>
                 <header class="tab-head">
                     <h2 class="tab-title">Lua de mel</h2>
-                    <p class="tab-sub">A viagem depois da festa.</p>
+                    <p class="tab-sub">A viagem depois da festa. Só vocês dois enxergam esta aba.</p>
                 </header>
-                <div id="honeymoon-content"></div>
+
+                <div class="trip-hero" id="honeymoon-hero"></div>
+
+                <div class="stat-grid" id="honeymoon-stats"></div>
+
+                <div class="panel form-panel">
+                    <h3 class="panel-title">A viagem</h3>
+                    <form id="trip-form">
+                        <div class="input-row">
+                            <div class="input-group">
+                                <label for="hm-destination">Destino</label>
+                                <input type="text" id="hm-destination" class="input" placeholder="Ex: Maragogi">
+                            </div>
+                            <div class="input-group">
+                                <label for="hm-start">Ida</label>
+                                <input type="date" id="hm-start" class="input">
+                            </div>
+                            <div class="input-group">
+                                <label for="hm-end">Volta</label>
+                                <input type="date" id="hm-end" class="input">
+                            </div>
+                            <div class="input-group">
+                                <label for="hm-budget">Orçamento (R$)</label>
+                                <input type="number" id="hm-budget" class="input" min="0" step="0.01"
+                                    placeholder="0,00">
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">Salvar viagem</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="panel">
+                    <h3 class="panel-title">Gastos e pendências</h3>
+                    <form id="honeymoon-item-form" class="inline-form">
+                        <input type="text" id="hm-item-title" class="input" placeholder="Ex: Passagem aérea"
+                            required>
+                        <select id="hm-item-category" class="input" aria-label="Tipo">
+                            <option value="flight">Voo</option>
+                            <option value="stay">Hospedagem</option>
+                            <option value="tour">Passeio</option>
+                            <option value="docs">Documentos</option>
+                            <option value="other" selected>Outros</option>
+                        </select>
+                        <input type="number" id="hm-item-amount" class="input" min="0" step="0.01"
+                            placeholder="Valor (opcional)" aria-label="Valor">
+                        <input type="date" id="hm-item-date" class="input" aria-label="Data (opcional)">
+                        <button type="submit" class="btn btn-primary">Adicionar</button>
+                    </form>
+                    <div id="honeymoon-items"></div>
+                </div>
             </section>
 
             <!-- ============ CONFIGURAÇÕES ============ -->
-            <section id="settings" class="tab">
+            <section id="settings" class="tab" data-couple>
                 <header class="tab-head">
                     <h2 class="tab-title">Configurações</h2>
                     <p class="tab-sub">Os dados do casamento e quem tem acesso.</p>
@@ -411,7 +566,7 @@
                                 <label for="w-time">Horário da cerimônia</label>
                                 <input type="time" id="w-time" class="input">
                             </div>
-                            <div class="input-group">
+                            <div class="input-group" data-finance>
                                 <label for="w-budget">Orçamento total (R$)</label>
                                 <input type="number" id="w-budget" class="input" min="0" step="0.01"
                                     placeholder="0,00">
@@ -442,12 +597,22 @@
                     <h3 class="panel-title">Quem tem acesso</h3>
                     <div id="members-list"></div>
 
-                    <form id="invite-form" class="inline-form" style="margin-top:18px;">
-                        <input type="email" id="invite-email" class="input" placeholder="E-mail do seu par" required>
-                        <button type="submit" class="btn">Gerar convite</button>
+                    <form id="invite-form" class="inline-form" style="margin-top:18px;" data-owner>
+                        <input type="email" id="invite-email" class="input" placeholder="E-mail da pessoa" required>
+                        <select id="invite-role" class="input" aria-label="Tipo de acesso">
+                            <option value="editor">Meu par — acesso total</option>
+                            <option value="planner">Cerimonialista — sem valores</option>
+                        </select>
+                        <button type="submit" class="btn">Convidar</button>
                     </form>
-                    <p class="form-hint">Ela cria a conta na tela de login e depois cola o código do convite. Só quem
-                        está nesta lista enxerga os valores.</p>
+                    <p class="form-hint" data-owner>A pessoa cria a conta na tela de login com <strong>este mesmo
+                        e-mail</strong>. Depois de confirmar o e-mail, ela já entra direto no casamento. O código só é
+                        necessário se der algum problema.</p>
+                    <p class="form-hint">
+                        <strong>Acesso total:</strong> vê e edita tudo.
+                        <strong>Cerimonialista:</strong> convidados, fornecedores (contatos e situação), checklist e
+                        roteiro do dia — não vê valores, parcelas, orçamento nem a lua de mel.
+                    </p>
                 </div>
             </section>
 

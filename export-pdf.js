@@ -155,6 +155,7 @@ export function exportGuestsPdf(button, state, helpers) {
                 <td>${escapeHtml(guest.group_name)}</td>
                 <td class="center">${guest.adults}</td>
                 <td class="center">${guest.children}</td>
+                <td class="center">${guest.invite_sent ? 'Enviado' : '—'}</td>
                 <td class="center"><span class="tag ${tag}">${label}</span></td>
             </tr>`;
     }).join('');
@@ -162,7 +163,8 @@ export function exportGuestsPdf(button, state, helpers) {
     const table = (list) => `
         <table>
             <thead><tr><th>Nome</th><th>Telefone</th><th>Grupo</th>
-                <th class="center">Ad.</th><th class="center">Cri.</th><th class="center">Situação</th></tr></thead>
+                <th class="center">Ad.</th><th class="center">Cri.</th><th class="center">Convite</th>
+                <th class="center">Situação</th></tr></thead>
             <tbody>${rows(list)}</tbody>
         </table>`;
 
@@ -175,10 +177,46 @@ export function exportGuestsPdf(button, state, helpers) {
             ${card('Confirmados', String(totals.confirmed))}
             ${card('Adultos', String(totals.adults))}
             ${card('Crianças', String(totals.children))}
+            ${card('Convites a enviar', String(totals.toInvite))}
         </div>
         ${groomsmen.length ? `<h2>Padrinhos</h2>${table(groomsmen)}` : ''}
         ${others.length ? `<h2>Convidados</h2>${table(others)}` : ''}
         ${state.guests.length ? '' : '<p>Nenhum convidado cadastrado.</p>'}`;
 
     return render('Lista de convidados', body, 'Convidados-Casorio.pdf', button, state);
+}
+
+export function exportVendorsPdf(button, state, helpers) {
+    const counts = helpers.vendorCounts();
+    const TAG = { ok: 'ok', pending: 'wait', urgent: 'no' };
+
+    const rows = helpers.sortedVendors().map((vendor) => {
+        const status = helpers.statusLabels[vendor.status] ?? helpers.statusLabels.pending;
+        const contact = [vendor.contact_name, vendor.phone, vendor.email].filter(Boolean).map(escapeHtml).join('<br>');
+        return `
+            <tr>
+                <td><strong>${escapeHtml(vendor.name)}</strong><br>
+                    <span style="color:#777">${escapeHtml(helpers.categoryLabels[vendor.category] ?? vendor.category)}</span></td>
+                <td>${contact || '—'}</td>
+                <td>${escapeHtml(vendor.next_step || '—')}</td>
+                <td class="center">${vendor.arrival_time ? String(vendor.arrival_time).slice(0, 5) : '—'}</td>
+                <td class="center"><span class="tag ${TAG[vendor.status] ?? 'wait'}">${status.label}</span></td>
+            </tr>`;
+    }).join('');
+
+    const body = `
+        <div class="cards">
+            ${card('Fornecedores', String(counts.total), true)}
+            ${card('Tudo certo', String(counts.ok))}
+            ${card('Falta acertar', String(counts.pending))}
+            ${card('Urgentes', String(counts.urgent))}
+        </div>
+        ${state.vendors.length ? `
+        <table>
+            <thead><tr><th>Fornecedor</th><th>Contato</th><th>O que falta</th>
+                <th class="center">Chegada</th><th class="center">Situação</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>` : '<p>Nenhum fornecedor cadastrado.</p>'}`;
+
+    return render('Fornecedores', body, 'Fornecedores-Casorio.pdf', button, state);
 }
