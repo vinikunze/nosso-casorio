@@ -272,7 +272,7 @@ body {
 }
 
 .tab-sub {
-    flex: 1;
+    flex: 1 1 220px;
     font-size: 0.88rem;
     color: var(--text-muted);
 }
@@ -824,6 +824,7 @@ body {
 
 .row-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
 }
@@ -1010,6 +1011,117 @@ body {
     text-transform: none;
     color: var(--text);
     cursor: pointer;
+}
+
+/* ---------- Filtros, fornecedores e convites ---------- */
+
+.filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 14px;
+}
+
+.filter-chip {
+    padding: 6px 14px;
+    font: inherit;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.filter-chip:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+}
+
+.filter-chip.active {
+    color: var(--gold-soft);
+    background: var(--gold-dim);
+    border-color: var(--gold);
+}
+
+.row-note {
+    margin: 6px 0 0;
+    font-size: 0.82rem;
+    color: var(--text);
+}
+
+.row-note.muted {
+    color: var(--text-muted);
+}
+
+.contact-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin-top: 7px;
+    font-size: 0.8rem;
+}
+
+.contact-links a {
+    color: var(--gold-soft);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--gold-dim);
+}
+
+.contact-links a:hover {
+    border-bottom-color: var(--gold);
+}
+
+select.input.compact-select {
+    width: auto;
+    padding: 5px 26px 5px 9px;
+}
+
+.invite-toggle {
+    white-space: nowrap;
+}
+
+.invite-toggle.sent {
+    color: var(--success);
+    border-color: rgba(74, 222, 128, 0.4);
+    background: var(--success-dim);
+}
+
+.check-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 16px;
+    font-size: 0.88rem;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.check-inline input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--gold);
+}
+
+.form-hint-top {
+    margin: -4px 0 14px;
+}
+
+.role-label {
+    font-size: 0.7rem;
+    color: var(--gold);
+}
+
+.role-label:empty {
+    display: none;
+}
+
+#honeymoon-items {
+    margin-top: 16px;
 }
 
 /* ---------- Toast ---------- */

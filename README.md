@@ -1,7 +1,8 @@
 # Nosso Casório
 
 Painel privado do casamento — fornecedores, parcelas, convidados, checklist,
-roteiro do dia e a lua de mel. Feito para duas pessoas: você e sua esposa.
+roteiro do dia e a lua de mel. Feito para o casal, com um acesso separado para
+a cerimonialista acompanhar junto.
 
 Site estático (HTML, CSS e JavaScript puro, sem build) com Supabase por trás.
 
@@ -22,25 +23,54 @@ Para publicar, sirva estes arquivos em qualquer hospedagem estática
 
 ## Banco
 
-Usa o projeto Supabase **`ccvlaywiyvrixduvbccj`** ("lua de mel"), que guarda o
-casamento e a viagem juntos. O schema do casamento está em
-[`supabase/wedding-schema.sql`](supabase/wedding-schema.sql).
+Usa o projeto Supabase **`nosso-casorio`** (`sifoxqaxqzygqxonqwlw`). O schema
+completo está em [`supabase/wedding-schema.sql`](supabase/wedding-schema.sql) —
+dá para recriar o banco do zero só com ele.
 
 A chave que está no `supabase.js` é a *publishable key* e pode ficar no código:
 quem controla o acesso é a Row Level Security. Cada tabela só devolve as linhas
 do casamento em que você é membro — um usuário logado que não seja membro
 enxerga zero registros.
 
-### Dando acesso para a sua esposa
+### Quem pode o quê
 
-1. Ela cria a conta na tela de login, em "Criar uma conta".
-2. Você abre **Configurações → Quem tem acesso**, coloca o e-mail dela e clica
-   em "Gerar convite".
-3. Copie o código que aparece e mande para ela.
-4. Ela entra e cola o código na tela que aparecer.
+A cerimonialista vê **tudo, menos valores em dinheiro**.
 
-A partir daí vocês dois editam tudo, e as alterações aparecem na tela do outro
-na hora.
+| | Casal (dono e par) | Cerimonialista |
+| --- | --- | --- |
+| Convidados, convites, bebidas | vê e edita | vê e edita |
+| Fornecedores: contato, situação, o que falta, horário de chegada | vê e edita | vê e edita (não exclui) |
+| Checklist e roteiro do dia | vê e edita | vê e edita |
+| Pagamentos | vê e edita, com valores | vê parcela por parcela (paga, a vencer, atrasada) e quem está quitado, **sem valores** |
+| Orçamento | vê e edita | **não vê** |
+| Lua de mel | vê e edita, com valores | vê destino, datas e pendências, **sem valores** |
+| Configurações | edita; só o dono convida e troca acessos | só leitura |
+
+Isso é garantido no banco, não só na tela: o que é dinheiro mora em tabelas
+separadas (`vendor_contracts`, `vendor_payments`, `wedding_private`,
+`honeymoon_items`) que a RLS esconde dela. O andamento sem valores chega por
+duas funções que devolvem tudo menos o dinheiro: `get_payment_status` e
+`get_honeymoon_overview`.
+
+### Dando acesso a alguém
+
+1. Em **Configurações → Quem tem acesso**, coloque o e-mail da pessoa, escolha
+   "Meu par — acesso total" ou "Cerimonialista — sem valores" e clique em
+   **Convidar**.
+2. A pessoa cria a conta na tela de login, em "Criar uma conta", **com esse
+   mesmo e-mail**, e clica no link de confirmação que chega no e-mail dela.
+3. Ao entrar, ela já cai direto no casamento. (Se algo der errado, o código que
+   aparece na lista de acessos ainda funciona: ela cola na tela que aparecer.)
+
+O acesso pode ser trocado depois na mesma lista (por exemplo, dar acesso total
+à cerimonialista).
+
+> A confirmação de e-mail precisa ficar **ligada** no Supabase
+> (Authentication → Sign In / Providers → Email → "Confirm email"). É ela que
+> impede alguém de criar conta com o e-mail da cerimonialista e entrar no
+> lugar dela. Em Authentication → URL Configuration, o endereço onde o site
+> está publicado precisa estar em *Site URL* e em *Redirect URLs*, senão o
+> link de confirmação manda para o lugar errado.
 
 ## Arquivos
 
@@ -49,11 +79,20 @@ na hora.
 | `index.html`, `auth.js`, `login.css` | Login, criação de conta e recuperação de senha |
 | `dashboard.html`, `dashboard.js`, `dashboard.css` | O painel e todas as telas |
 | `db.js` | Todo o acesso ao Supabase, isolado num só lugar |
-| `export-pdf.js` | PDF do relatório financeiro e da lista de convidados |
+| `export-pdf.js` | PDF do relatório financeiro, dos fornecedores e da lista de convidados |
 | `supabase.js` | Conexão |
 | `global.css` | Cores, tipografia, botões e formulários |
 
 ## Detalhes que valem saber
+
+- **Fornecedores × Valores.** A aba *Fornecedores* é a lista um por um:
+  contato, situação (urgente / falta acertar / tudo certo), o que falta
+  resolver e o horário de chegada no dia. A aba *Valores* é o contrato e o
+  carnê. Um fornecedor pode existir só na primeira; para lançar os valores
+  dele, use "Lançar valores" na aba Valores.
+- **Convites.** Cada linha da lista de convidados conta como um convite (uma
+  família = um convite). "Falta enviar convite" mostra quem ainda não recebeu,
+  ignorando quem já disse que não vai.
 
 - **Parcelas.** Ao cadastrar um fornecedor você informa o total, a entrada e o
   número de parcelas; o carnê é gerado com vencimento mensal. A última parcela

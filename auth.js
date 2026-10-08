@@ -44,7 +44,7 @@ toggleModeBtn?.addEventListener('click', () => {
     clearFeedback();
 
     if (mode === 'signup') {
-        subtitle.textContent = 'Crie sua conta e peça o código de convite para o seu par';
+        subtitle.textContent = 'Use o mesmo e-mail em que você foi convidado(a)';
         submitBtn.textContent = 'Criar conta';
         toggleModeBtn.textContent = 'Já tenho conta';
         passwordInput.autocomplete = 'new-password';
@@ -96,7 +96,10 @@ form?.addEventListener('submit', async (event) => {
         return;
     }
 
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    // O link de confirmação volta para este mesmo site (precisa estar na lista
+    // de Redirect URLs do Supabase em Authentication → URL Configuration).
+    const emailRedirectTo = new URL('index.html', window.location.href).href;
+    const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo } });
     setBusy(false, label);
 
     if (error) {
@@ -108,7 +111,7 @@ form?.addEventListener('submit', async (event) => {
     if (data.session) {
         window.location.href = 'dashboard.html';
     } else {
-        showFeedback('Conta criada. Confirme o e-mail que enviamos e depois entre por aqui.', 'success');
+        showFeedback('Conta criada. Abra o link que enviamos para o seu e-mail e depois entre por aqui.', 'success');
     }
 });
 

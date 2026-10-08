@@ -3,7 +3,8 @@ import { supabase } from './supabase.js';
 /**
  * Camada de acesso ao banco.
  * Cada função devolve dados já prontos para a tela; a RLS do Supabase
- * garante que só vem o que é do casamento em que você é membro.
+ * garante que só vem o que é do casamento em que você é membro. Para a
+ * cerimonialista, as tabelas de valores simplesmente voltam vazias.
  */
 
 // ---------------------------------------------------------
@@ -59,6 +60,35 @@ export async function updateWedding(weddingId, patch) {
     if (error) throw error;
 }
 
+/** Dados só do casal: orçamento e a lua de mel. Volta null para a cerimonialista. */
+export async function fetchWeddingPrivate(weddingId) {
+    const { data, error } = await supabase
+        .from('wedding_private')
+        .select('*')
+        .eq('wedding_id', weddingId)
+        .maybeSingle();
+
+    if (error) throw error;
+    return data;
+}
+
+export async function updateWeddingPrivate(weddingId, patch) {
+    const { error } = await supabase
+        .from('wedding_private')
+        .upsert({ wedding_id: weddingId, ...patch }, { onConflict: 'wedding_id' });
+    if (error) throw error;
+}
+
+/**
+ * Aceita sozinho os convites pendentes para o e-mail desta conta (só vale
+ * com o e-mail já confirmado). Devolve quantos foram aceitos.
+ */
+export async function claimInvites() {
+    const { data, error } = await supabase.rpc('claim_my_invites');
+    if (error) throw error;
+    return data ?? 0;
+}
+
 export async function acceptInvite(token) {
     const { data, error } = await supabase.rpc('accept_wedding_invite', { p_token: token });
     if (error) throw error;
@@ -76,7 +106,7 @@ export async function fetchMembers(weddingId) {
     return data ?? [];
 }
 
-export async function inviteMember(weddingId, email, displayName) {
+export async function inviteMember(weddingId, { email, role, displayName }) {
     const session = await getSession();
     const { data, error } = await supabase
         .from('wedding_members')
@@ -84,7 +114,7 @@ export async function inviteMember(weddingId, email, displayName) {
             wedding_id: weddingId,
             invited_email: email.trim().toLowerCase(),
             display_name: displayName || null,
-            role: 'editor',
+            role,
             invited_by: session?.user?.id ?? null
         })
         .select()
@@ -92,6 +122,11 @@ export async function inviteMember(weddingId, email, displayName) {
 
     if (error) throw error;
     return data;
+}
+
+export async function updateMemberRole(memberId, role) {
+    const { error } = await supabase.from('wedding_members').update({ role }).eq('id', memberId);
+    if (error) throw error;
 }
 
 export async function removeMember(memberId) {
@@ -103,17 +138,26 @@ export async function removeMember(memberId) {
 // Fornecedores e parcelas
 // ---------------------------------------------------------
 
+/**
+ * O contrato (valor, forma de pagamento) mora em vendor_contracts. Aqui ele é
+ * achatado de volta no fornecedor para o resto da tela não precisar saber.
+ * Para a cerimonialista, contract vem null e payments vem vazio.
+ */
 export async function fetchVendors(weddingId) {
     const { data, error } = await supabase
         .from('vendors')
-        .select('*, payments:vendor_payments(*)')
+        .select('*, contract:vendor_contracts(*), payments:vendor_payments(*)')
         .eq('wedding_id', weddingId)
         .order('created_at', { ascending: true });
 
     if (error) throw error;
 
-    return (data ?? []).map((vendor) => ({
+    return (data ?? []).map(({ contract, ...vendor }) => ({
         ...vendor,
+        has_contract: Boolean(contract),
+        total_amount: contract?.total_amount ?? 0,
+        payment_method: contract?.payment_method ?? null,
+        contract_notes: contract?.notes ?? null,
         payments: [...(vendor.payments ?? [])].sort(comparePayments)
     }));
 }
@@ -127,7 +171,8 @@ function comparePayments(a, b) {
     return (a.position ?? 0) - (b.position ?? 0);
 }
 
-export async function createVendor(weddingId, vendor, payments) {
+/** contract e payments são opcionais: a ficha do fornecedor existe sem valores. */
+export async function createVendor(weddingId, vendor, contract, payments) {
     const { data, error } = await supabase
         .from('vendors')
         .insert({ wedding_id: weddingId, ...vendor })
@@ -136,19 +181,24 @@ export async function createVendor(weddingId, vendor, payments) {
 
     if (error) throw error;
 
-    if (payments?.length) {
-        await replacePayments(data.id, payments);
-    }
+    if (contract) await saveContract(data.id, contract);
+    if (payments?.length) await replacePayments(data.id, payments);
     return data;
 }
 
-export async function updateVendor(vendorId, vendor, payments) {
+export async function updateVendor(vendorId, vendor, contract, payments) {
     const { error } = await supabase.from('vendors').update(vendor).eq('id', vendorId);
     if (error) throw error;
 
-    if (payments) {
-        await replacePayments(vendorId, payments);
-    }
+    if (contract) await saveContract(vendorId, contract);
+    if (payments) await replacePayments(vendorId, payments);
+}
+
+async function saveContract(vendorId, contract) {
+    const { error } = await supabase
+        .from('vendor_contracts')
+        .upsert({ vendor_id: vendorId, ...contract }, { onConflict: 'vendor_id' });
+    if (error) throw error;
 }
 
 /**
@@ -191,6 +241,16 @@ async function replacePayments(vendorId, payments) {
 
     const { error: insertError } = await supabase.from('vendor_payments').insert(rows);
     if (insertError) throw insertError;
+}
+
+/**
+ * Andamento dos pagamentos SEM valores (para a cerimonialista): cada parcela
+ * com vencimento e se foi paga, e se o fornecedor já está quitado.
+ */
+export async function fetchPaymentStatus(weddingId) {
+    const { data, error } = await supabase.rpc('get_payment_status', { p_wedding_id: weddingId });
+    if (error) throw error;
+    return data ?? [];
 }
 
 export async function deleteVendor(vendorId) {
@@ -300,43 +360,40 @@ export async function deleteRunOfShowItem(itemId) {
 }
 
 // ---------------------------------------------------------
-// Lua de mel (reaproveita as tabelas de viagem já existentes)
+// Lua de mel (só o casal enxerga)
 // ---------------------------------------------------------
 
-export async function fetchHoneymoon(tripId) {
-    const query = supabase
-        .from('trips')
-        .select(`
-            *,
-            destinations (*),
-            expenses (*),
-            accommodations (*),
-            flights (*),
-            checklists (*, checklist_items (*))
-        `)
-        .order('created_at', { ascending: true })
-        .limit(1);
-
-    const { data, error } = tripId
-        ? await query.eq('id', tripId).maybeSingle()
-        : await query.maybeSingle();
+export async function fetchHoneymoonItems(weddingId) {
+    const { data, error } = await supabase
+        .from('honeymoon_items')
+        .select('*')
+        .eq('wedding_id', weddingId)
+        .order('position', { ascending: true })
+        .order('created_at', { ascending: true });
 
     if (error) throw error;
-    if (!data) return null;
+    return data ?? [];
+}
 
-    data.destinations = (data.destinations ?? []).sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-    data.checklists = (data.checklists ?? [])
-        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-        .map((list) => ({
-            ...list,
-            checklist_items: (list.checklist_items ?? []).sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-        }));
-
+/** Lua de mel SEM valores (para a cerimonialista): destino, datas e pendências. */
+export async function fetchHoneymoonOverview(weddingId) {
+    const { data, error } = await supabase.rpc('get_honeymoon_overview', { p_wedding_id: weddingId });
+    if (error) throw error;
     return data;
 }
 
-export async function setHoneymoonItemDone(itemId, isDone) {
-    const { error } = await supabase.from('checklist_items').update({ is_done: isDone }).eq('id', itemId);
+export async function createHoneymoonItem(weddingId, item) {
+    const { error } = await supabase.from('honeymoon_items').insert({ wedding_id: weddingId, ...item });
+    if (error) throw error;
+}
+
+export async function updateHoneymoonItem(itemId, patch) {
+    const { error } = await supabase.from('honeymoon_items').update(patch).eq('id', itemId);
+    if (error) throw error;
+}
+
+export async function deleteHoneymoonItem(itemId) {
+    const { error } = await supabase.from('honeymoon_items').delete().eq('id', itemId);
     if (error) throw error;
 }
 
@@ -344,7 +401,10 @@ export async function setHoneymoonItemDone(itemId, isDone) {
 // Tempo real
 // ---------------------------------------------------------
 
-const WEDDING_TABLES = ['weddings', 'vendors', 'vendor_payments', 'guests', 'wedding_tasks', 'run_of_show_items'];
+const WEDDING_TABLES = [
+    'weddings', 'wedding_private', 'wedding_members', 'vendors', 'vendor_contracts',
+    'vendor_payments', 'guests', 'wedding_tasks', 'run_of_show_items', 'honeymoon_items'
+];
 
 export function subscribeToChanges(onChange) {
     const channel = supabase.channel('nosso-casorio');
