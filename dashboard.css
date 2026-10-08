@@ -367,9 +367,9 @@ body {
     margin-bottom: 24px;
 }
 
-/* Cinco contadores numa linha só (fornecedores e convidados). */
+/* Cinco ou seis contadores numa linha só (fornecedores e convidados). */
 .stat-grid.five {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
 }
 
 .stat-grid.compact {
@@ -1048,6 +1048,12 @@ select.input.compact-select {
     text-transform: none;
     color: var(--text);
     cursor: pointer;
+}
+
+.check-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 22px;
 }
 
 .check-inline input {

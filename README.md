@@ -93,9 +93,11 @@ O acesso pode ser trocado depois na mesma lista (por exemplo, dar acesso total
   resolver e o horário de chegada no dia. A aba *Valores* é o contrato e o
   carnê. Um fornecedor pode existir só na primeira; para lançar os valores
   dele, use "Lançar valores" na aba Valores.
-- **Convites.** Cada linha da lista de convidados conta como um convite (uma
-  família = um convite). "Falta enviar convite" mostra quem ainda não recebeu,
-  ignorando quem já disse que não vai.
+- **Save the date e convite.** Cada convidado tem duas marcações separadas:
+  *Save the date* e *Convite físico*. Cada linha da lista conta como um envio
+  (uma família = um save the date e um convite). Os filtros "Falta save the
+  date" e "Falta convite físico" mostram quem ainda não recebeu, ignorando quem
+  já disse que não vai.
 
 - **Parcelas.** Ao cadastrar um fornecedor você informa o total, a entrada e o
   número de parcelas; o carnê é gerado com vencimento mensal. A última parcela

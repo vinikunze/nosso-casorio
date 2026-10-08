@@ -3,8 +3,8 @@
 --
 -- Aplicado no projeto Supabase "nosso-casorio" (sifoxqaxqzygqxonqwlw) pelas
 -- migrations wedding_base_schema, wedding_rls_policies,
--- move_permission_helpers_to_private_schema, planner_views_without_amounts e
--- vendor_status_paying. Este arquivo junta todas, para
+-- move_permission_helpers_to_private_schema, planner_views_without_amounts,
+-- vendor_status_paying e guests_save_the_date. Este arquivo junta todas, para
 -- consulta e para recriar o banco do zero se um dia for preciso.
 --
 -- Quem é quem (wedding_members.role):
@@ -149,7 +149,8 @@ create table public.guests (
   adults       smallint not null default 1,
   children     smallint not null default 0,
   status       public.guest_status not null default 'pending',
-  invite_sent  boolean not null default false,
+  invite_sent  boolean not null default false,          -- convite físico
+  save_the_date_sent boolean not null default false,
   beverages    jsonb not null default '{}'::jsonb,
   notes        text,
   created_at   timestamptz not null default now(),
