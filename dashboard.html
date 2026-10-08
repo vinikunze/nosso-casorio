@@ -148,7 +148,7 @@
                     <button type="button" id="btn-export-vendors" class="btn btn-ghost btn-sm">Exportar PDF</button>
                 </header>
 
-                <div class="stat-grid" id="vendor-stats"></div>
+                <div class="stat-grid five" id="vendor-stats"></div>
 
                 <div class="panel form-panel">
                     <h3 class="panel-title" id="contact-form-title">Adicionar fornecedor</h3>
@@ -167,6 +167,7 @@
                                 <select id="c-status" class="input">
                                     <option value="pending">Falta acertar</option>
                                     <option value="urgent">Urgente</option>
+                                    <option value="paying">Estamos pagando</option>
                                     <option value="ok">Tudo certo</option>
                                 </select>
                             </div>
@@ -216,6 +217,7 @@
                     <button type="button" class="filter-chip active" data-filter="all">Todos</button>
                     <button type="button" class="filter-chip" data-filter="urgent">Urgentes</button>
                     <button type="button" class="filter-chip" data-filter="pending">Falta acertar</button>
+                    <button type="button" class="filter-chip" data-filter="paying">Estamos pagando</button>
                     <button type="button" class="filter-chip" data-filter="ok">Tudo certo</button>
                 </div>
 
@@ -312,7 +314,7 @@
                     <button type="button" id="btn-export-guests" class="btn btn-ghost btn-sm">Exportar PDF</button>
                 </header>
 
-                <div class="stat-grid" id="guest-stats"></div>
+                <div class="stat-grid five" id="guest-stats"></div>
 
                 <div class="panel form-panel">
                     <h3 class="panel-title" id="guest-form-title">Adicionar convidado</h3>

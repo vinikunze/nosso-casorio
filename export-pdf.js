@@ -23,6 +23,7 @@ const PDF_STYLES = `
     .tag.ok { background: #dcfce7; color: #166534; }
     .tag.no { background: #fee2e2; color: #991b1b; }
     .tag.wait { background: #fef3c7; color: #92400e; }
+    .tag.info { background: #e0f2fe; color: #075985; }
     .foot { margin-top: 20px; text-align: center; font-size: 9px; color: #999; }
 `;
 
@@ -188,7 +189,7 @@ export function exportGuestsPdf(button, state, helpers) {
 
 export function exportVendorsPdf(button, state, helpers) {
     const counts = helpers.vendorCounts();
-    const TAG = { ok: 'ok', pending: 'wait', urgent: 'no' };
+    const TAG = { ok: 'ok', paying: 'info', pending: 'wait', urgent: 'no' };
 
     const rows = helpers.sortedVendors().map((vendor) => {
         const status = helpers.statusLabels[vendor.status] ?? helpers.statusLabels.pending;
@@ -208,6 +209,7 @@ export function exportVendorsPdf(button, state, helpers) {
         <div class="cards">
             ${card('Fornecedores', String(counts.total), true)}
             ${card('Tudo certo', String(counts.ok))}
+            ${card('Estamos pagando', String(counts.paying))}
             ${card('Falta acertar', String(counts.pending))}
             ${card('Urgentes', String(counts.urgent))}
         </div>

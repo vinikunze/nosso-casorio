@@ -89,7 +89,7 @@ O acesso pode ser trocado depois na mesma lista (por exemplo, dar acesso total
 ## Detalhes que valem saber
 
 - **Fornecedores × Valores.** A aba *Fornecedores* é a lista um por um:
-  contato, situação (urgente / falta acertar / tudo certo), o que falta
+  contato, situação (urgente / falta acertar / estamos pagando / tudo certo), o que falta
   resolver e o horário de chegada no dia. A aba *Valores* é o contrato e o
   carnê. Um fornecedor pode existir só na primeira; para lançar os valores
   dele, use "Lançar valores" na aba Valores.
