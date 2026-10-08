@@ -156,6 +156,7 @@ export function exportGuestsPdf(button, state, helpers) {
                 <td>${escapeHtml(guest.group_name)}</td>
                 <td class="center">${guest.adults}</td>
                 <td class="center">${guest.children}</td>
+                <td class="center">${guest.save_the_date_sent ? 'Enviado' : '—'}</td>
                 <td class="center">${guest.invite_sent ? 'Enviado' : '—'}</td>
                 <td class="center"><span class="tag ${tag}">${label}</span></td>
             </tr>`;
@@ -164,7 +165,7 @@ export function exportGuestsPdf(button, state, helpers) {
     const table = (list) => `
         <table>
             <thead><tr><th>Nome</th><th>Telefone</th><th>Grupo</th>
-                <th class="center">Ad.</th><th class="center">Cri.</th><th class="center">Convite</th>
+                <th class="center">Ad.</th><th class="center">Cri.</th><th class="center">Save the date</th><th class="center">Convite</th>
                 <th class="center">Situação</th></tr></thead>
             <tbody>${rows(list)}</tbody>
         </table>`;
@@ -178,6 +179,7 @@ export function exportGuestsPdf(button, state, helpers) {
             ${card('Confirmados', String(totals.confirmed))}
             ${card('Adultos', String(totals.adults))}
             ${card('Crianças', String(totals.children))}
+            ${card('Save the date a enviar', String(totals.toSaveDate))}
             ${card('Convites a enviar', String(totals.toInvite))}
         </div>
         ${groomsmen.length ? `<h2>Padrinhos</h2>${table(groomsmen)}` : ''}

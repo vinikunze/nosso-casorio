@@ -422,6 +422,8 @@ function guestTotals() {
     let pending = 0;
     let invitesSent = 0;
     let toInvite = 0;
+    let saveDateSent = 0;
+    let toSaveDate = 0;
 
     for (const guest of state.guests) {
         const a = num(guest.adults);
@@ -430,14 +432,17 @@ function guestTotals() {
         children += c;
         if (guest.status === 'confirmed') confirmed += a + c;
         if (guest.status === 'pending') pending += a + c;
-        // Convite é por linha da lista (uma família = um convite).
+        // Cada linha da lista é um envio (uma família = um save the date e
+        // um convite). Quem já disse que não vai não conta como pendente.
+        if (guest.save_the_date_sent) saveDateSent += 1;
+        else if (guest.status !== 'declined') toSaveDate += 1;
         if (guest.invite_sent) invitesSent += 1;
         else if (guest.status !== 'declined') toInvite += 1;
     }
 
     return {
         adults, children, total: adults + children, confirmed, pending,
-        invitesSent, toInvite, invitations: state.guests.length
+        invitesSent, toInvite, saveDateSent, toSaveDate, invitations: state.guests.length
     };
 }
 
@@ -606,9 +611,9 @@ function renderOverview() {
             { label: 'Convidados', value: String(guests.total), note: `${guests.adults} adultos · ${guests.children} crianças`, variant: 'accent' },
             { label: 'Confirmados', value: String(guests.confirmed), note: `${guests.pending} sem resposta`, variant: 'good' },
             {
-                label: 'Convites a enviar',
+                label: 'Convites físicos a enviar',
                 value: String(guests.toInvite),
-                note: `${guests.invitesSent} de ${guests.invitations} enviados`,
+                note: `${guests.toSaveDate} ainda sem save the date`,
                 variant: guests.toInvite > 0 ? 'bad' : ''
             },
             {
@@ -699,7 +704,9 @@ function renderOverview() {
             : meter('Parcelas pagas', `${paidCount}/${state.paymentStatus.length}`,
                 percent(paidCount, state.paymentStatus.length)),
         meter('Fornecedores certos', `${vendors.ok}/${vendors.total}`, percent(vendors.ok, vendors.total)),
-        meter('Convites enviados', `${guests.invitesSent}/${guests.invitations}`,
+        meter('Save the date enviados', `${guests.saveDateSent}/${guests.invitations}`,
+            percent(guests.saveDateSent, guests.invitations)),
+        meter('Convites físicos enviados', `${guests.invitesSent}/${guests.invitations}`,
             percent(guests.invitesSent, guests.invitations)),
         meter('Confirmações', `${guests.confirmed}/${guests.total}`, percent(guests.confirmed, guests.total)),
         meter('Checklist', `${doneTasks}/${state.tasks.length}`, percent(doneTasks, state.tasks.length)),
@@ -1054,6 +1061,7 @@ function renderCashflow() {
 
 function guestMatchesFilter(guest) {
     switch (state.guestFilter) {
+        case 'to-save-date': return !guest.save_the_date_sent && guest.status !== 'declined';
         case 'to-invite': return !guest.invite_sent && guest.status !== 'declined';
         case 'pending':
         case 'confirmed':
@@ -1071,7 +1079,13 @@ function renderGuests() {
         { label: 'Pendentes', value: String(totals.pending) },
         { label: 'Adultos / crianças', value: `${totals.adults} / ${totals.children}` },
         {
-            label: 'Convites a enviar',
+            label: 'Save the date a enviar',
+            value: String(totals.toSaveDate),
+            note: `${totals.saveDateSent} de ${totals.invitations} enviados`,
+            variant: totals.toSaveDate > 0 ? 'bad' : ''
+        },
+        {
+            label: 'Convite físico a enviar',
             value: String(totals.toInvite),
             note: `${totals.invitesSent} de ${totals.invitations} enviados`,
             variant: totals.toInvite > 0 ? 'bad' : ''
@@ -1107,11 +1121,14 @@ function renderGuestRow(guest) {
         guest.phone
     ].filter(Boolean).join(' · ');
 
-    const inviteButton = guest.invite_sent
-        ? `<button class="btn btn-sm invite-toggle sent" data-action="toggle-invite" data-id="${guest.id}"
-                   title="Clique para desmarcar">✉ Convite enviado</button>`
-        : `<button class="btn btn-sm invite-toggle" data-action="toggle-invite" data-id="${guest.id}"
-                   title="Marcar que o convite já foi entregue">Marcar convite enviado</button>`;
+    // Um botão por envio: clicar marca, clicar de novo desmarca.
+    const sendToggle = (field, label) => {
+        const sent = Boolean(guest[field]);
+        return `<button class="btn btn-sm invite-toggle ${sent ? 'sent' : ''}" data-action="toggle-send"
+                        data-field="${field}" data-id="${guest.id}" aria-pressed="${sent}"
+                        title="${sent ? 'Enviado. Clique para desmarcar' : 'Clique quando enviar'}">${sent ? '✓ ' : ''}${label}</button>`;
+    };
+    const inviteButton = sendToggle('save_the_date_sent', 'Save the date') + sendToggle('invite_sent', 'Convite físico');
 
     return `
         <div class="row-card ${guest.status}">
@@ -1391,10 +1408,11 @@ async function onDelegatedClick(event) {
         return mutate(() => db.deleteGuest(id), 'Convidado removido.');
     }
 
-    if (action === 'toggle-invite') {
+    if (action === 'toggle-send') {
         const guest = state.guests.find((g) => g.id === id);
-        if (!guest) return;
-        return mutate(() => db.updateGuest(id, { invite_sent: !guest.invite_sent }));
+        const { field } = trigger.dataset;
+        if (!guest || !['save_the_date_sent', 'invite_sent'].includes(field)) return;
+        return mutate(() => db.updateGuest(id, { [field]: !guest[field] }));
     }
 
     if (action === 'delete-task') return mutate(() => db.deleteTask(id));
@@ -1696,6 +1714,7 @@ function wireGuestForm() {
             adults: parseInt($('g-adults').value, 10) || 0,
             children: parseInt($('g-children').value, 10) || 0,
             status: $('g-status').value,
+            save_the_date_sent: $('g-save-date-sent').checked,
             invite_sent: $('g-invite-sent').checked,
             beverages: {
                 beer: parseInt($('drink-beer').value, 10) || 0,
@@ -1736,6 +1755,7 @@ function startGuestEdit(guestId) {
     $('g-adults').value = guest.adults;
     $('g-children').value = guest.children;
     $('g-status').value = guest.status;
+    $('g-save-date-sent').checked = Boolean(guest.save_the_date_sent);
     $('g-invite-sent').checked = Boolean(guest.invite_sent);
     $('drink-beer').value = drinks.beer ?? 0;
     $('drink-cocktail').value = drinks.cocktail ?? 0;

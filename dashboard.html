@@ -359,10 +359,16 @@
                             </div>
                         </div>
 
-                        <label class="check-inline" for="g-invite-sent">
-                            <input type="checkbox" id="g-invite-sent">
-                            Convite já enviado
-                        </label>
+                        <div class="check-group">
+                            <label class="check-inline" for="g-save-date-sent">
+                                <input type="checkbox" id="g-save-date-sent">
+                                Save the date enviado
+                            </label>
+                            <label class="check-inline" for="g-invite-sent">
+                                <input type="checkbox" id="g-invite-sent">
+                                Convite físico enviado
+                            </label>
+                        </div>
 
                         <fieldset class="drinks-fieldset">
                             <legend>Consumo estimado (pessoas que bebem cada item)</legend>
@@ -406,7 +412,8 @@
 
                 <div class="filter-row" id="guest-filters" role="group" aria-label="Filtrar convidados">
                     <button type="button" class="filter-chip active" data-filter="all">Todos</button>
-                    <button type="button" class="filter-chip" data-filter="to-invite">Falta enviar convite</button>
+                    <button type="button" class="filter-chip" data-filter="to-save-date">Falta save the date</button>
+                    <button type="button" class="filter-chip" data-filter="to-invite">Falta convite físico</button>
                     <button type="button" class="filter-chip" data-filter="pending">Sem resposta</button>
                     <button type="button" class="filter-chip" data-filter="confirmed">Confirmados</button>
                     <button type="button" class="filter-chip" data-filter="declined">Não vão</button>
