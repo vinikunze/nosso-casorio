@@ -935,50 +935,6 @@ body {
     font-size: 0.94rem;
 }
 
-/* ---------- Lua de mel ---------- */
-
-.trip-hero {
-    padding: 26px;
-    margin-bottom: 20px;
-    background: linear-gradient(135deg, rgba(125, 211, 252, 0.10), rgba(255, 255, 255, 0.02));
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-}
-
-.trip-hero h3 {
-    font-family: var(--font-serif);
-    font-size: 2rem;
-    color: var(--text);
-}
-
-.trip-hero p {
-    margin-top: 6px;
-    font-size: 0.88rem;
-    color: var(--text-muted);
-}
-
-.chip-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 16px;
-}
-
-.chip {
-    padding: 6px 13px;
-    font-size: 0.82rem;
-    color: var(--text);
-    background: var(--surface-strong);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-}
-
-.chip-index {
-    margin-right: 6px;
-    color: var(--gold);
-    font-weight: 600;
-}
-
 .check-row {
     display: flex;
     align-items: center;
@@ -1118,10 +1074,6 @@ select.input.compact-select {
 
 .role-label:empty {
     display: none;
-}
-
-#honeymoon-items {
-    margin-top: 16px;
 }
 
 /* ---------- Toast ---------- */

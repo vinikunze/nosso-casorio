@@ -15,10 +15,8 @@ const state = {
     guests: [],
     tasks: [],
     runOfShow: [],
-    honeymoonItems: [],
-    // Versões sem valores, para a cerimonialista.
+    // Pagamentos sem valores, para a cerimonialista.
     paymentStatus: [],
-    honeymoonOverview: null,
     editingVendorId: null,
     editingVendorInputs: null,
     editingContactId: null,
@@ -65,10 +63,6 @@ const ROLE_LABELS = {
     editor: 'Acesso total',
     planner: 'Cerimonialista',
     viewer: 'Só vê'
-};
-
-const HONEYMOON_CATEGORY = {
-    flight: 'Voo', stay: 'Hospedagem', tour: 'Passeio', docs: 'Documentos', other: 'Outros'
 };
 
 // Litros por pessoa marcada em cada bebida.
@@ -288,14 +282,13 @@ async function reload() {
         // As tabelas de valores voltam vazias para a cerimonialista (RLS),
         // então dá para buscar tudo junto sem perguntar o papel antes.
         const id = state.wedding.id;
-        const [vendors, guests, tasks, runOfShow, members, privateData, honeymoonItems] = await Promise.all([
+        const [vendors, guests, tasks, runOfShow, members, privateData] = await Promise.all([
             db.fetchVendors(id),
             db.fetchGuests(id),
             db.fetchTasks(id),
             db.fetchRunOfShow(id),
             db.fetchMembers(id),
-            db.fetchWeddingPrivate(id),
-            db.fetchHoneymoonItems(id)
+            db.fetchWeddingPrivate(id)
         ]);
 
         state.vendors = vendors;
@@ -304,20 +297,14 @@ async function reload() {
         state.runOfShow = runOfShow;
         state.members = members;
         state.private = privateData;
-        state.honeymoonItems = honeymoonItems;
 
         const me = members.find((m) => m.user_id === state.userId && m.invite_status === 'accepted');
         state.role = me?.role ?? (state.wedding.owner_id === state.userId ? 'owner' : 'viewer');
 
         // A cerimonialista não lê as tabelas de valores; busca o andamento
-        // por funções que devolvem tudo menos o dinheiro.
+        // por uma função que devolve tudo menos o dinheiro.
         if (!can.seeFinance()) {
-            const [paymentStatus, honeymoonOverview] = await Promise.all([
-                db.fetchPaymentStatus(id),
-                db.fetchHoneymoonOverview(id)
-            ]);
-            state.paymentStatus = paymentStatus;
-            state.honeymoonOverview = honeymoonOverview;
+            state.paymentStatus = await db.fetchPaymentStatus(id);
         }
 
         renderAll();
@@ -482,7 +469,6 @@ function renderAll() {
     renderVendorDirectory();
     if (can.seeFinance()) renderFinance();
     else renderPaymentStatus();
-    renderHoneymoon();
     renderGuests();
     renderChecklist();
     renderRunOfShow();
@@ -1246,87 +1232,6 @@ function renderRunOfShow() {
         : '<p class="empty-state">Nenhum horário de chegada definido ainda.</p>';
 }
 
-// ---------- Lua de mel ----------
-
-function renderHoneymoon() {
-    // O casal lê as tabelas; a cerimonialista recebe a versão sem valores.
-    const finance = can.seeFinance();
-    const source = state.private ?? {};
-    const overview = state.honeymoonOverview ?? {};
-    const trip = finance
-        ? { destination: source.honeymoon_destination, start: source.honeymoon_start, end: source.honeymoon_end }
-        : { destination: overview.destination, start: overview.start, end: overview.end };
-    const items = finance ? state.honeymoonItems : (overview.items ?? []);
-
-    const period = trip.start && trip.end
-        ? `${formatDate(trip.start)} a ${formatDate(trip.end)}`
-        : trip.start ? `Ida em ${formatDate(trip.start)}` : 'Datas a definir';
-
-    $('honeymoon-hero').innerHTML = `
-        <h3>${escapeHtml(trip.destination || 'Destino a definir')}</h3>
-        <p>${period}</p>`;
-
-    if (finance) {
-        const planned = items.reduce((sum, item) => sum + num(item.amount), 0);
-        const paid = items.filter((item) => item.is_done).reduce((sum, item) => sum + num(item.amount), 0);
-        const budget = num(source.honeymoon_budget);
-
-        $('honeymoon-stats').innerHTML = [
-            budget > 0
-                ? {
-                    label: 'Orçamento da viagem',
-                    value: money(budget),
-                    note: planned > budget ? `Passou ${money(planned - budget)}` : `Sobram ${money(budget - planned)}`,
-                    variant: planned > budget ? 'bad' : 'accent'
-                }
-                : { label: 'Orçamento da viagem', value: 'Não definido' },
-            { label: 'Previsto', value: money(planned) },
-            { label: 'Já pago', value: money(paid), variant: 'good' },
-            { label: 'Falta pagar', value: money(planned - paid), variant: planned - paid > 0.005 ? 'bad' : '' }
-        ].map(statCard).join('');
-
-        setIfIdle('hm-destination', source.honeymoon_destination);
-        setIfIdle('hm-start', source.honeymoon_start);
-        setIfIdle('hm-end', source.honeymoon_end);
-        setIfIdle('hm-budget', source.honeymoon_budget);
-    }
-
-    const editable = can.editWedding();
-
-    $('honeymoon-items').innerHTML = items.length
-        ? items.map((item) => {
-            const detail = [
-                HONEYMOON_CATEGORY[item.category] ?? item.category,
-                finance && item.amount != null ? money(item.amount) : null,
-                item.due_date ? formatDate(item.due_date) : null
-            ].filter(Boolean).join(' · ');
-
-            const control = editable
-                ? `<input type="checkbox" class="payment-check" ${item.is_done ? 'checked' : ''}
-                          data-action="toggle-honeymoon-item" data-id="${item.id}"
-                          aria-label="Marcar ${escapeHtml(item.title)} como resolvido">`
-                : '';
-
-            const action = editable
-                ? `<button class="icon-btn delete" data-action="delete-honeymoon-item" data-id="${item.id}"
-                           title="Excluir">✕</button>`
-                : `<span class="badge ${item.is_done ? 'success' : 'warning'}">${item.is_done ? 'Resolvido' : 'Pendente'}</span>`;
-
-            return `
-                <div class="row-card ${item.is_done ? 'done' : 'pending'}">
-                    <div class="payment-main">
-                        ${control}
-                        <div class="row-main">
-                            <strong>${escapeHtml(item.title)}</strong>
-                            <small>${escapeHtml(detail)}</small>
-                        </div>
-                    </div>
-                    <div class="row-actions">${action}</div>
-                </div>`;
-        }).join('')
-        : '<p class="empty-state">Nada lançado ainda.</p>';
-}
-
 // ---------- Configurações ----------
 
 function setIfIdle(id, value) {
@@ -1421,7 +1326,6 @@ function wireEvents() {
     wireGuestForm();
     wireChecklist();
     wireRunOfShow();
-    wireHoneymoon();
     wireSettings();
 
     // Ações delegadas (funcionam mesmo depois de redesenhar as listas)
@@ -1497,11 +1401,6 @@ async function onDelegatedClick(event) {
         return mutate(() => db.deleteRunOfShowItem(id));
     }
 
-    if (action === 'delete-honeymoon-item') {
-        if (!confirm('Excluir este item da viagem?')) return;
-        return mutate(() => db.deleteHoneymoonItem(id));
-    }
-
     if (action === 'remove-member') {
         if (!confirm('Remover o acesso desta pessoa?')) return;
         return mutate(() => db.removeMember(id), 'Acesso removido.');
@@ -1541,9 +1440,6 @@ async function onDelegatedChange(event) {
     }
     if (action === 'task-status') {
         return mutate(() => db.updateTask(id, { status: trigger.value }));
-    }
-    if (action === 'toggle-honeymoon-item') {
-        return mutate(() => db.updateHoneymoonItem(id, { is_done: trigger.checked }));
     }
     if (action === 'member-role') {
         return mutate(() => db.updateMemberRole(id, trigger.value), 'Acesso atualizado.');
@@ -1898,46 +1794,6 @@ function wireRunOfShow() {
         if (saved) {
             $('ros-title').value = '';
             $('ros-title').focus();
-        }
-    });
-}
-
-// ---------- Lua de mel ----------
-
-function wireHoneymoon() {
-    $('trip-form').addEventListener('submit', async (event) => {
-        event.preventDefault();
-
-        const start = $('hm-start').value || null;
-        const end = $('hm-end').value || null;
-        if (start && end && end < start) return toast('A volta não pode ser antes da ida.', 'error');
-
-        await mutate(() => db.updateWeddingPrivate(state.wedding.id, {
-            honeymoon_destination: $('hm-destination').value.trim() || null,
-            honeymoon_start: start,
-            honeymoon_end: end,
-            honeymoon_budget: $('hm-budget').value ? round2($('hm-budget').value) : null
-        }), 'Viagem salva.');
-    });
-
-    $('honeymoon-item-form').addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const title = $('hm-item-title').value.trim();
-        if (!title) return;
-
-        const amount = $('hm-item-amount').value;
-        const saved = await mutate(() => db.createHoneymoonItem(state.wedding.id, {
-            title,
-            category: $('hm-item-category').value,
-            amount: amount === '' ? null : round2(amount),
-            due_date: $('hm-item-date').value || null,
-            position: state.honeymoonItems.length
-        }));
-
-        if (saved) {
-            $('honeymoon-item-form').reset();
-            $('hm-item-category').value = 'other';
-            $('hm-item-title').focus();
         }
     });
 }
