@@ -82,15 +82,15 @@
                 <button class="nav-btn active" data-target="overview"><span class="nav-icon">◆</span> Visão
                     geral</button>
                 <button class="nav-btn" data-target="vendors"><span class="nav-icon">☎</span> Fornecedores</button>
-                <button class="nav-btn" data-target="finance" data-finance><span class="nav-icon">$</span>
-                    Valores</button>
+                <button class="nav-btn" data-target="finance"><span class="nav-icon">$</span>
+                    <span id="nav-finance-label">Valores</span></button>
                 <button class="nav-btn" data-target="guests"><span class="nav-icon">♥</span> Convidados</button>
                 <button class="nav-btn" data-target="checklist"><span class="nav-icon">✓</span> Checklist</button>
                 <button class="nav-btn" data-target="runofshow"><span class="nav-icon">◷</span> Roteiro do
                     dia</button>
-                <button class="nav-btn" data-target="honeymoon" data-finance><span class="nav-icon">✈</span> Lua de
+                <button class="nav-btn" data-target="honeymoon"><span class="nav-icon">✈</span> Lua de
                     mel</button>
-                <button class="nav-btn" data-target="settings" data-couple><span class="nav-icon">⚙</span>
+                <button class="nav-btn" data-target="settings"><span class="nav-icon">⚙</span>
                     Configurações</button>
             </nav>
 
@@ -136,7 +136,7 @@
                     </div>
                 </div>
 
-                <div class="panel" data-finance>
+                <div class="panel">
                     <h3 class="panel-title">Próximos pagamentos</h3>
                     <div id="upcoming-payments"></div>
                 </div>
@@ -225,16 +225,20 @@
             </section>
 
             <!-- ============ VALORES ============ -->
-            <section id="finance" class="tab" data-finance>
+            <section id="finance" class="tab">
                 <header class="tab-head">
-                    <h2 class="tab-title">Valores</h2>
-                    <p class="tab-sub">Fornecedores, contratos e o carnê de cada um.</p>
-                    <button type="button" id="btn-export-finance" class="btn btn-ghost btn-sm">Exportar PDF</button>
+                    <h2 class="tab-title" id="finance-title">Valores</h2>
+                    <p class="tab-sub" id="finance-sub">Fornecedores, contratos e o carnê de cada um.</p>
+                    <button type="button" id="btn-export-finance" class="btn btn-ghost btn-sm" data-finance>Exportar
+                        PDF</button>
                 </header>
 
-                <div class="stat-grid" id="finance-stats"></div>
+                <!-- Cerimonialista: andamento dos pagamentos, sem valores -->
+                <div id="payment-status" data-planner></div>
 
-                <div class="panel form-panel">
+                <div class="stat-grid" id="finance-stats" data-finance></div>
+
+                <div class="panel form-panel" data-finance>
                     <h3 class="panel-title" id="vendor-form-title">Lançar contrato</h3>
                     <p class="form-hint form-hint-top">Fornecedor já está na aba Fornecedores? Clique no ✎ dele na
                         lista abaixo para lançar os valores, em vez de cadastrar de novo.</p>
@@ -294,9 +298,9 @@
                     </form>
                 </div>
 
-                <div id="vendors-list"></div>
+                <div id="vendors-list" data-finance></div>
 
-                <div class="panel">
+                <div class="panel" data-finance>
                     <h3 class="panel-title">Fluxo de caixa por mês</h3>
                     <div class="cashflow-grid" id="cashflow"></div>
                 </div>
@@ -478,17 +482,17 @@
             </section>
 
             <!-- ============ LUA DE MEL ============ -->
-            <section id="honeymoon" class="tab" data-finance>
+            <section id="honeymoon" class="tab">
                 <header class="tab-head">
                     <h2 class="tab-title">Lua de mel</h2>
-                    <p class="tab-sub">A viagem depois da festa. Só vocês dois enxergam esta aba.</p>
+                    <p class="tab-sub">A viagem depois da festa.</p>
                 </header>
 
                 <div class="trip-hero" id="honeymoon-hero"></div>
 
-                <div class="stat-grid" id="honeymoon-stats"></div>
+                <div class="stat-grid" id="honeymoon-stats" data-finance></div>
 
-                <div class="panel form-panel">
+                <div class="panel form-panel" data-couple>
                     <h3 class="panel-title">A viagem</h3>
                     <form id="trip-form">
                         <div class="input-row">
@@ -518,7 +522,7 @@
 
                 <div class="panel">
                     <h3 class="panel-title">Gastos e pendências</h3>
-                    <form id="honeymoon-item-form" class="inline-form">
+                    <form id="honeymoon-item-form" class="inline-form" data-couple>
                         <input type="text" id="hm-item-title" class="input" placeholder="Ex: Passagem aérea"
                             required>
                         <select id="hm-item-category" class="input" aria-label="Tipo">
@@ -538,7 +542,7 @@
             </section>
 
             <!-- ============ CONFIGURAÇÕES ============ -->
-            <section id="settings" class="tab" data-couple>
+            <section id="settings" class="tab">
                 <header class="tab-head">
                     <h2 class="tab-title">Configurações</h2>
                     <p class="tab-sub">Os dados do casamento e quem tem acesso.</p>
@@ -586,7 +590,7 @@
                             <label for="w-cover">Imagem de fundo (URL)</label>
                             <input type="url" id="w-cover" class="input" placeholder="https://...">
                         </div>
-                        <div class="form-actions">
+                        <div class="form-actions" data-couple>
                             <button type="submit" class="btn btn-primary">Salvar</button>
                             <span id="wedding-form-feedback" class="form-hint"></span>
                         </div>
@@ -610,8 +614,9 @@
                         necessário se der algum problema.</p>
                     <p class="form-hint">
                         <strong>Acesso total:</strong> vê e edita tudo.
-                        <strong>Cerimonialista:</strong> convidados, fornecedores (contatos e situação), checklist e
-                        roteiro do dia — não vê valores, parcelas, orçamento nem a lua de mel.
+                        <strong>Cerimonialista:</strong> vê tudo, menos valores em dinheiro. Edita convidados,
+                        fornecedores, checklist e roteiro; vê os pagamentos (pago, em aberto, atrasado) e a lua de mel
+                        sem os valores.
                     </p>
                 </div>
             </section>

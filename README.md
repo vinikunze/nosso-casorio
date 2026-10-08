@@ -34,18 +34,23 @@ enxerga zero registros.
 
 ### Quem pode o quê
 
+A cerimonialista vê **tudo, menos valores em dinheiro**.
+
 | | Casal (dono e par) | Cerimonialista |
 | --- | --- | --- |
 | Convidados, convites, bebidas | vê e edita | vê e edita |
 | Fornecedores: contato, situação, o que falta, horário de chegada | vê e edita | vê e edita (não exclui) |
 | Checklist e roteiro do dia | vê e edita | vê e edita |
-| Valores, parcelas, orçamento | vê e edita | **não vê** |
-| Lua de mel | vê e edita | **não vê** |
-| Configurações e acessos | o dono convida e troca o acesso | **não vê** |
+| Pagamentos | vê e edita, com valores | vê parcela por parcela (paga, a vencer, atrasada) e quem está quitado, **sem valores** |
+| Orçamento | vê e edita | **não vê** |
+| Lua de mel | vê e edita, com valores | vê destino, datas e pendências, **sem valores** |
+| Configurações | edita; só o dono convida e troca acessos | só leitura |
 
 Isso é garantido no banco, não só na tela: o que é dinheiro mora em tabelas
 separadas (`vendor_contracts`, `vendor_payments`, `wedding_private`,
-`honeymoon_items`) que voltam vazias para a cerimonialista.
+`honeymoon_items`) que a RLS esconde dela. O andamento sem valores chega por
+duas funções que devolvem tudo menos o dinheiro: `get_payment_status` e
+`get_honeymoon_overview`.
 
 ### Dando acesso a alguém
 

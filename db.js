@@ -243,6 +243,16 @@ async function replacePayments(vendorId, payments) {
     if (insertError) throw insertError;
 }
 
+/**
+ * Andamento dos pagamentos SEM valores (para a cerimonialista): cada parcela
+ * com vencimento e se foi paga, e se o fornecedor já está quitado.
+ */
+export async function fetchPaymentStatus(weddingId) {
+    const { data, error } = await supabase.rpc('get_payment_status', { p_wedding_id: weddingId });
+    if (error) throw error;
+    return data ?? [];
+}
+
 export async function deleteVendor(vendorId) {
     const { error } = await supabase.from('vendors').delete().eq('id', vendorId);
     if (error) throw error;
@@ -363,6 +373,13 @@ export async function fetchHoneymoonItems(weddingId) {
 
     if (error) throw error;
     return data ?? [];
+}
+
+/** Lua de mel SEM valores (para a cerimonialista): destino, datas e pendências. */
+export async function fetchHoneymoonOverview(weddingId) {
+    const { data, error } = await supabase.rpc('get_honeymoon_overview', { p_wedding_id: weddingId });
+    if (error) throw error;
+    return data;
 }
 
 export async function createHoneymoonItem(weddingId, item) {

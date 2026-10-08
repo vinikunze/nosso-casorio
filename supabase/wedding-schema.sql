@@ -2,16 +2,17 @@
 -- Nosso Casório — schema completo
 --
 -- Aplicado no projeto Supabase "nosso-casorio" (sifoxqaxqzygqxonqwlw) pelas
--- migrations wedding_base_schema, wedding_rls_policies e
--- move_permission_helpers_to_private_schema. Este arquivo junta todas, para
+-- migrations wedding_base_schema, wedding_rls_policies,
+-- move_permission_helpers_to_private_schema e planner_views_without_amounts. Este arquivo junta todas, para
 -- consulta e para recriar o banco do zero se um dia for preciso.
 --
 -- Quem é quem (wedding_members.role):
 --   owner    quem criou o casamento — vê e edita tudo, convida pessoas
 --   editor   o par — vê e edita tudo
---   planner  a cerimonialista — convidados, fornecedores (contatos e
---            situação), checklist e roteiro. NÃO vê valores, parcelas,
---            orçamento nem a lua de mel.
+--   planner  a cerimonialista — vê tudo, menos dinheiro: edita convidados,
+--            fornecedores (contatos e situação), checklist e roteiro; vê o
+--            andamento dos pagamentos e a lua de mel SEM valores (pelas
+--            funções get_payment_status e get_honeymoon_overview).
 --   viewer   só leitura de tudo (não aparece na tela, fica de reserva)
 --
 -- Por isso o que é dinheiro mora em tabelas separadas (vendor_contracts,
@@ -402,6 +403,70 @@ end;
 $$;
 revoke all on function public.claim_my_invites() from anon, public;
 grant execute on function public.claim_my_invites() to authenticated;
+
+-- ------------------------------------- andamento sem valores (cerimonialista)
+-- Ela não lê vendor_payments nem honeymoon_items/wedding_private (RLS). Estas
+-- funções devolvem o andamento SEM nenhum valor em dinheiro, para qualquer
+-- membro do casamento.
+
+create or replace function public.get_payment_status(p_wedding_id uuid)
+returns table (
+  payment_id     uuid,
+  vendor_id      uuid,
+  description    text,
+  due_date       date,
+  is_paid        boolean,
+  "position"     integer,
+  vendor_settled boolean
+)
+language sql stable security definer set search_path to 'public'
+as $$
+  with totals as (
+    select v.id as vendor_id,
+           coalesce(c.total_amount, 0) as contracted,
+           coalesce(sum(p.amount) filter (where p.is_paid), 0) as paid
+    from public.vendors v
+    left join public.vendor_contracts c on c.vendor_id = v.id
+    left join public.vendor_payments p on p.vendor_id = v.id
+    where v.wedding_id = p_wedding_id
+    group by v.id, c.total_amount
+  )
+  select p.id, p.vendor_id, p.description, p.due_date, p.is_paid, p.position,
+         (t.contracted > 0 and t.paid >= t.contracted - 0.005)
+  from public.vendor_payments p
+  join public.vendors v on v.id = p.vendor_id
+  join totals t on t.vendor_id = p.vendor_id
+  where v.wedding_id = p_wedding_id
+    and private.is_wedding_member(p_wedding_id)
+  order by p.due_date nulls last, p.position;
+$$;
+
+create or replace function public.get_honeymoon_overview(p_wedding_id uuid)
+returns jsonb
+language sql stable security definer set search_path to 'public'
+as $$
+  select case when private.is_wedding_member(p_wedding_id) then
+    jsonb_build_object(
+      'destination', w.honeymoon_destination,
+      'start', w.honeymoon_start,
+      'end', w.honeymoon_end,
+      'items', coalesce((
+        select jsonb_agg(jsonb_build_object(
+                 'id', h.id, 'title', h.title, 'category', h.category,
+                 'due_date', h.due_date, 'is_done', h.is_done)
+               order by h.position, h.created_at)
+        from public.honeymoon_items h
+        where h.wedding_id = p_wedding_id), '[]'::jsonb)
+    )
+  end
+  from public.wedding_private w
+  where w.wedding_id = p_wedding_id;
+$$;
+
+revoke all on function public.get_payment_status(uuid)     from anon, public;
+revoke all on function public.get_honeymoon_overview(uuid) from anon, public;
+grant execute on function public.get_payment_status(uuid)     to authenticated;
+grant execute on function public.get_honeymoon_overview(uuid) to authenticated;
 
 -- ------------------------------------------------------------------ RLS -----
 -- Sem ser membro do casamento, nenhuma linha é visível.

@@ -16,6 +16,9 @@ const state = {
     tasks: [],
     runOfShow: [],
     honeymoonItems: [],
+    // Versões sem valores, para a cerimonialista.
+    paymentStatus: [],
+    honeymoonOverview: null,
     editingVendorId: null,
     editingVendorInputs: null,
     editingContactId: null,
@@ -74,7 +77,8 @@ const DRINK_RATIOS = { beer: 1.5, soda: 0.6, juice: 0.4, water: 0.5 };
 // ==========================================================
 // Permissões
 // O banco é quem garante (RLS). Aqui é só para não mostrar botão que
-// não vai funcionar nem tela que voltaria vazia.
+// não vai funcionar nem tela que voltaria vazia. A cerimonialista vê todas
+// as abas; o que é dinheiro ou edição do casal some para ela.
 // ==========================================================
 
 const can = {
@@ -89,8 +93,19 @@ function applyRole() {
         document.querySelectorAll(selector).forEach((element) => { element.hidden = !visible; });
 
     toggle('[data-finance]', can.seeFinance());
+    toggle('[data-planner]', !can.seeFinance());
     toggle('[data-couple]', can.editWedding());
     toggle('[data-owner]', can.manageMembers());
+
+    // Dados do casamento: a cerimonialista vê, mas não edita.
+    $('wedding-form').querySelectorAll('input').forEach((input) => { input.disabled = !can.editWedding(); });
+
+    const financeLabel = can.seeFinance() ? 'Valores' : 'Pagamentos';
+    $('nav-finance-label').textContent = financeLabel;
+    $('finance-title').textContent = financeLabel;
+    $('finance-sub').textContent = can.seeFinance()
+        ? 'Fornecedores, contratos e o carnê de cada um.'
+        : 'Quem já foi pago e o que vence quando — sem os valores.';
 
     $('role-label').textContent = state.role === 'owner' ? '' : ROLE_LABELS[state.role] ?? '';
 
@@ -294,6 +309,17 @@ async function reload() {
         const me = members.find((m) => m.user_id === state.userId && m.invite_status === 'accepted');
         state.role = me?.role ?? (state.wedding.owner_id === state.userId ? 'owner' : 'viewer');
 
+        // A cerimonialista não lê as tabelas de valores; busca o andamento
+        // por funções que devolvem tudo menos o dinheiro.
+        if (!can.seeFinance()) {
+            const [paymentStatus, honeymoonOverview] = await Promise.all([
+                db.fetchPaymentStatus(id),
+                db.fetchHoneymoonOverview(id)
+            ]);
+            state.paymentStatus = paymentStatus;
+            state.honeymoonOverview = honeymoonOverview;
+        }
+
         renderAll();
     } catch (error) {
         console.error(error);
@@ -454,10 +480,9 @@ function renderAll() {
     renderHeader();
     renderOverview();
     renderVendorDirectory();
-    if (can.seeFinance()) {
-        renderFinance();
-        renderHoneymoon();
-    }
+    if (can.seeFinance()) renderFinance();
+    else renderPaymentStatus();
+    renderHoneymoon();
     renderGuests();
     renderChecklist();
     renderRunOfShow();
@@ -631,8 +656,25 @@ function renderOverview() {
             ? 'Todos os fornecedores estão certos.'
             : 'Nenhum fornecedor cadastrado ainda.'}</p>`;
 
-    // Próximos pagamentos (só o casal)
-    if (can.seeFinance()) {
+    // Próximos pagamentos: com valor para o casal, sem valor para a cerimonialista.
+    if (!can.seeFinance()) {
+        const vendorName = (vendorId) => state.vendors.find((v) => v.id === vendorId)?.name ?? 'Fornecedor';
+        const upcoming = state.paymentStatus.filter((p) => !p.is_paid && p.due_date).slice(0, 6);
+
+        $('upcoming-payments').innerHTML = upcoming.length
+            ? upcoming.map((payment) => {
+                const overdue = isOverdue(payment);
+                return `
+                    <div class="upcoming-row">
+                        <div>
+                            <strong>${escapeHtml(vendorName(payment.vendor_id))}</strong>
+                            <small>${escapeHtml(payment.description)} · ${formatDate(payment.due_date)}</small>
+                        </div>
+                        <span class="badge ${overdue ? 'danger' : 'neutral'}">${overdue ? 'Atrasado' : 'A vencer'}</span>
+                    </div>`;
+            }).join('')
+            : '<p class="empty-state">Nenhum pagamento em aberto.</p>';
+    } else {
         const upcoming = allPayments()
             .filter((p) => !p.is_paid && p.due_date)
             .sort((a, b) => a.due_date.localeCompare(b.due_date))
@@ -661,11 +703,14 @@ function renderOverview() {
     // Barras de progresso
     const percent = (part, whole) => (whole > 0 ? (part / whole) * 100 : 0);
 
+    const paidCount = state.paymentStatus.filter((p) => p.is_paid).length;
+
     $('overview-progress').innerHTML = [
         can.seeFinance()
             ? meter('Pagamentos quitados', `${Math.round(percent(finance.paid, finance.scheduled))}%`,
                 percent(finance.paid, finance.scheduled))
-            : '',
+            : meter('Parcelas pagas', `${paidCount}/${state.paymentStatus.length}`,
+                percent(paidCount, state.paymentStatus.length)),
         meter('Fornecedores certos', `${vendors.ok}/${vendors.total}`, percent(vendors.ok, vendors.total)),
         meter('Convites enviados', `${guests.invitesSent}/${guests.invitations}`,
             percent(guests.invitesSent, guests.invitations)),
@@ -875,6 +920,81 @@ function renderVendorCard(vendor) {
             ${payments || '<p class="empty-state">Sem parcelas lançadas.</p>'}
             ${driftNote}
         </article>`;
+}
+
+/** Pagamentos para a cerimonialista: parcela por parcela, sem nenhum valor. */
+function renderPaymentStatus() {
+    const byVendor = new Map();
+    for (const payment of state.paymentStatus) {
+        if (!byVendor.has(payment.vendor_id)) byVendor.set(payment.vendor_id, []);
+        byVendor.get(payment.vendor_id).push(payment);
+    }
+
+    const cards = state.vendors
+        .filter((vendor) => byVendor.has(vendor.id))
+        .map((vendor) => {
+            const payments = byVendor.get(vendor.id);
+            const settled = payments[0].vendor_settled;
+            const overdueCount = payments.filter(isOverdue).length;
+            const paidCount = payments.filter((p) => p.is_paid).length;
+            // Atrasado primeiro, quitado por último.
+            const rank = overdueCount > 0 ? 0 : settled ? 2 : 1;
+            return { vendor, payments, settled, overdueCount, paidCount, rank };
+        })
+        .sort((a, b) => a.rank - b.rank || a.vendor.name.localeCompare(b.vendor.name, 'pt-BR'));
+
+    const withoutPayments = state.vendors.filter((vendor) => !byVendor.has(vendor.id)).map((v) => v.name);
+
+    const html = cards.map(({ vendor, payments, settled, overdueCount, paidCount }) => {
+        const badge = settled
+            ? '<span class="badge success">Quitado</span>'
+            : overdueCount > 0
+                ? `<span class="badge danger">${overdueCount} parcela(s) atrasada(s)</span>`
+                : '<span class="badge neutral">Em dia</span>';
+        const percent = (paidCount / payments.length) * 100;
+
+        const rows = payments.map((payment) => {
+            const overdue = isOverdue(payment);
+            const classes = ['payment-row', payment.is_paid ? 'paid' : '', overdue ? 'overdue' : ''].join(' ');
+            const status = payment.is_paid
+                ? '<span class="badge success">Pago</span>'
+                : overdue ? '<span class="badge danger">Atrasado</span>' : '<span class="badge neutral">A vencer</span>';
+            return `
+                <div class="${classes}">
+                    <div class="payment-desc">
+                        <strong>${escapeHtml(payment.description)}</strong>
+                        <small>Vence em ${formatDate(payment.due_date)}</small>
+                    </div>
+                    ${status}
+                </div>`;
+        }).join('');
+
+        return `
+            <article class="vendor-card ${settled ? 'settled' : ''}">
+                <header class="vendor-head">
+                    <div>
+                        <h3 class="vendor-name">${escapeHtml(vendor.name)} ${settled ? '✓' : ''}</h3>
+                        <p class="vendor-meta">${escapeHtml(CATEGORY_LABELS[vendor.category] ?? vendor.category)}</p>
+                    </div>
+                    <div>${badge}</div>
+                </header>
+                <div class="vendor-progress">
+                    <div class="progress-labels">
+                        <span>${paidCount} de ${payments.length} parcela(s) paga(s)</span>
+                        <span>${Math.round(percent)}%</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill ${settled ? 'done' : ''}" style="width:${percent}%"></div>
+                    </div>
+                </div>
+                ${rows}
+            </article>`;
+    }).join('');
+
+    $('payment-status').innerHTML = (html || '<p class="empty-state">Nenhum pagamento lançado ainda.</p>')
+        + (withoutPayments.length
+            ? `<p class="form-hint">Sem pagamentos lançados: ${escapeHtml(withoutPayments.join(', '))}.</p>`
+            : '');
 }
 
 function renderCashflow() {
@@ -1129,66 +1249,82 @@ function renderRunOfShow() {
 // ---------- Lua de mel ----------
 
 function renderHoneymoon() {
-    const trip = state.private ?? {};
-    const items = state.honeymoonItems;
+    // O casal lê as tabelas; a cerimonialista recebe a versão sem valores.
+    const finance = can.seeFinance();
+    const source = state.private ?? {};
+    const overview = state.honeymoonOverview ?? {};
+    const trip = finance
+        ? { destination: source.honeymoon_destination, start: source.honeymoon_start, end: source.honeymoon_end }
+        : { destination: overview.destination, start: overview.start, end: overview.end };
+    const items = finance ? state.honeymoonItems : (overview.items ?? []);
 
-    const planned = items.reduce((sum, item) => sum + num(item.amount), 0);
-    const paid = items.filter((item) => item.is_done).reduce((sum, item) => sum + num(item.amount), 0);
-    const budget = num(trip.honeymoon_budget);
-
-    const period = trip.honeymoon_start && trip.honeymoon_end
-        ? `${formatDate(trip.honeymoon_start)} a ${formatDate(trip.honeymoon_end)}`
-        : trip.honeymoon_start ? `Ida em ${formatDate(trip.honeymoon_start)}` : 'Datas a definir';
+    const period = trip.start && trip.end
+        ? `${formatDate(trip.start)} a ${formatDate(trip.end)}`
+        : trip.start ? `Ida em ${formatDate(trip.start)}` : 'Datas a definir';
 
     $('honeymoon-hero').innerHTML = `
-        <h3>${escapeHtml(trip.honeymoon_destination || 'Destino a definir')}</h3>
+        <h3>${escapeHtml(trip.destination || 'Destino a definir')}</h3>
         <p>${period}</p>`;
 
-    $('honeymoon-stats').innerHTML = [
-        budget > 0
-            ? {
-                label: 'Orçamento da viagem',
-                value: money(budget),
-                note: planned > budget ? `Passou ${money(planned - budget)}` : `Sobram ${money(budget - planned)}`,
-                variant: planned > budget ? 'bad' : 'accent'
-            }
-            : { label: 'Orçamento da viagem', value: 'Não definido' },
-        { label: 'Previsto', value: money(planned) },
-        { label: 'Já pago', value: money(paid), variant: 'good' },
-        { label: 'Falta pagar', value: money(planned - paid), variant: planned - paid > 0.005 ? 'bad' : '' }
-    ].map(statCard).join('');
+    if (finance) {
+        const planned = items.reduce((sum, item) => sum + num(item.amount), 0);
+        const paid = items.filter((item) => item.is_done).reduce((sum, item) => sum + num(item.amount), 0);
+        const budget = num(source.honeymoon_budget);
 
-    setIfIdle('hm-destination', trip.honeymoon_destination);
-    setIfIdle('hm-start', trip.honeymoon_start);
-    setIfIdle('hm-end', trip.honeymoon_end);
-    setIfIdle('hm-budget', trip.honeymoon_budget);
+        $('honeymoon-stats').innerHTML = [
+            budget > 0
+                ? {
+                    label: 'Orçamento da viagem',
+                    value: money(budget),
+                    note: planned > budget ? `Passou ${money(planned - budget)}` : `Sobram ${money(budget - planned)}`,
+                    variant: planned > budget ? 'bad' : 'accent'
+                }
+                : { label: 'Orçamento da viagem', value: 'Não definido' },
+            { label: 'Previsto', value: money(planned) },
+            { label: 'Já pago', value: money(paid), variant: 'good' },
+            { label: 'Falta pagar', value: money(planned - paid), variant: planned - paid > 0.005 ? 'bad' : '' }
+        ].map(statCard).join('');
+
+        setIfIdle('hm-destination', source.honeymoon_destination);
+        setIfIdle('hm-start', source.honeymoon_start);
+        setIfIdle('hm-end', source.honeymoon_end);
+        setIfIdle('hm-budget', source.honeymoon_budget);
+    }
+
+    const editable = can.editWedding();
 
     $('honeymoon-items').innerHTML = items.length
         ? items.map((item) => {
             const detail = [
                 HONEYMOON_CATEGORY[item.category] ?? item.category,
-                item.amount != null ? money(item.amount) : null,
+                finance && item.amount != null ? money(item.amount) : null,
                 item.due_date ? formatDate(item.due_date) : null
             ].filter(Boolean).join(' · ');
+
+            const control = editable
+                ? `<input type="checkbox" class="payment-check" ${item.is_done ? 'checked' : ''}
+                          data-action="toggle-honeymoon-item" data-id="${item.id}"
+                          aria-label="Marcar ${escapeHtml(item.title)} como resolvido">`
+                : '';
+
+            const action = editable
+                ? `<button class="icon-btn delete" data-action="delete-honeymoon-item" data-id="${item.id}"
+                           title="Excluir">✕</button>`
+                : `<span class="badge ${item.is_done ? 'success' : 'warning'}">${item.is_done ? 'Resolvido' : 'Pendente'}</span>`;
 
             return `
                 <div class="row-card ${item.is_done ? 'done' : 'pending'}">
                     <div class="payment-main">
-                        <input type="checkbox" class="payment-check" ${item.is_done ? 'checked' : ''}
-                               data-action="toggle-honeymoon-item" data-id="${item.id}"
-                               aria-label="Marcar ${escapeHtml(item.title)} como resolvido">
+                        ${control}
                         <div class="row-main">
                             <strong>${escapeHtml(item.title)}</strong>
                             <small>${escapeHtml(detail)}</small>
                         </div>
                     </div>
-                    <div class="row-actions">
-                        <button class="icon-btn delete" data-action="delete-honeymoon-item" data-id="${item.id}"
-                                title="Excluir">✕</button>
-                    </div>
+                    <div class="row-actions">${action}</div>
                 </div>`;
         }).join('')
-        : '<p class="empty-state">Nada lançado ainda. Voo, hotel, passeios, documentos...</p>';
+        : '<p class="empty-state">Nada lançado ainda.</p>';
 }
 
 // ---------- Configurações ----------
@@ -1199,7 +1335,6 @@ function setIfIdle(id, value) {
 }
 
 function renderSettings() {
-    if (!can.editWedding()) return;
     const wedding = state.wedding;
 
     setIfIdle('w-partner1', wedding.partner1_name);
@@ -1239,7 +1374,7 @@ function renderSettings() {
                         ${accepted ? 'Ativo' : 'Aguardando a pessoa entrar'}
                     </span>
                     ${roleControl}
-                    ${accepted ? '' : `<button class="btn btn-sm" data-action="copy-invite"
+                    ${accepted || !can.editWedding() ? '' : `<button class="btn btn-sm" data-action="copy-invite"
                         data-token="${escapeHtml(member.invite_token)}">Copiar código</button>`}
                     ${editableRole ? `<button class="icon-btn delete" data-action="remove-member"
                         data-id="${member.id}" title="Remover acesso">✕</button>` : ''}
