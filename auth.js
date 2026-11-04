@@ -12,9 +12,59 @@ const togglePasswordBtn = document.getElementById('toggle-password');
 
 let mode = 'login';
 
-// Quem já está logado não precisa ver o login de novo.
+// Veio pelo link de "Esqueci minha senha"? O ?recuperar=1 é o sinal que nós
+// mesmos colocamos no link; o type=recovery no endereço é o que o Supabase
+// manda (cobre também um link que tenha voltado sem o nosso sinal).
+let recovering = new URLSearchParams(window.location.search).has('recuperar')
+    || window.location.hash.includes('type=recovery');
+
+supabase.auth.onAuthStateChange((event) => {
+    if (event === 'PASSWORD_RECOVERY') showResetForm();
+});
+
+if (recovering) showResetForm();
+
+// Quem já está logado não precisa ver o login de novo — a não ser que tenha
+// vindo trocar a senha: aí o link já criou a sessão, mas falta a senha nova.
 supabase.auth.getSession().then(({ data: { session } }) => {
-    if (session) window.location.replace('dashboard.html');
+    if (session && !recovering) window.location.replace('dashboard.html');
+});
+
+function showResetForm() {
+    recovering = true;
+    form.hidden = true;
+    document.getElementById('login-actions').hidden = true;
+    document.getElementById('reset-form').hidden = false;
+    subtitle.textContent = 'Crie uma senha nova para entrar';
+    document.getElementById('reset-password').focus();
+}
+
+document.getElementById('reset-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const resetFeedback = document.getElementById('reset-feedback');
+    const resetSubmit = document.getElementById('reset-submit');
+    const say = (message, kind = 'error') => {
+        resetFeedback.textContent = message;
+        resetFeedback.className = `auth-feedback is-visible ${kind}`;
+    };
+
+    const password = document.getElementById('reset-password').value;
+    const confirmation = document.getElementById('reset-confirm').value;
+
+    if (password.length < 6) return say('A senha precisa ter pelo menos 6 caracteres.');
+    if (password !== confirmation) return say('As duas senhas não estão iguais.');
+
+    resetSubmit.disabled = true;
+    resetSubmit.textContent = 'Salvando...';
+    const { error } = await supabase.auth.updateUser({ password });
+    resetSubmit.disabled = false;
+    resetSubmit.textContent = 'Salvar nova senha';
+
+    if (error) return say(traduzErro(error));
+
+    say('Senha alterada! Entrando...', 'success');
+    setTimeout(() => window.location.replace('dashboard.html'), 1200);
 });
 
 function showFeedback(message, kind = 'error') {
@@ -65,12 +115,13 @@ forgotBtn?.addEventListener('click', async () => {
     }
 
     forgotBtn.disabled = true;
-    const redirectTo = new URL('index.html', window.location.href).href;
+    // ?recuperar=1 faz a página abrir direto na tela de senha nova.
+    const redirectTo = new URL('index.html?recuperar=1', window.location.href).href;
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
     forgotBtn.disabled = false;
 
     if (error) showFeedback(traduzErro(error));
-    else showFeedback('Enviamos um link de redefinição para o seu e-mail.', 'success');
+    else showFeedback('Enviamos um link para o seu e-mail. Abra o link para criar uma senha nova (olhe também no spam).', 'success');
 });
 
 form?.addEventListener('submit', async (event) => {
@@ -124,6 +175,10 @@ function traduzErro(error) {
     if (raw.includes('password should be')) return 'A senha precisa ter pelo menos 6 caracteres.';
     if (raw.includes('rate limit') || raw.includes('too many')) return 'Muitas tentativas. Espere um minuto e tente de novo.';
     if (raw.includes('failed to fetch')) return 'Sem conexão com o servidor. Verifique a internet.';
+    if (raw.includes('should be different')) return 'A senha nova precisa ser diferente da antiga.';
+    if (raw.includes('session') && (raw.includes('missing') || raw.includes('expired') || raw.includes('not found'))) {
+        return 'O link expirou ou já foi usado. Volte ao login e peça outro em "Esqueci minha senha".';
+    }
 
     return error?.message || 'Não foi possível concluir. Tente novamente.';
 }
