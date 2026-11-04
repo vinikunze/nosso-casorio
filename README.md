@@ -88,6 +88,11 @@ O acesso pode ser trocado depois na mesma lista (por exemplo, dar acesso total
 
 ## Detalhes que valem saber
 
+- **Esqueci minha senha.** O link que chega no e-mail abre o site na tela
+  "Crie uma senha nova" (`index.html?recuperar=1`). Esse endereço precisa
+  estar liberado em Supabase → Authentication → URL Configuration → Redirect
+  URLs; `https://nossocasorio.netlify.app/**` já cobre.
+
 - **Fornecedores × Valores.** A aba *Fornecedores* é a lista um por um:
   contato, situação (urgente / falta acertar / estamos pagando / tudo certo), o que falta
   resolver e o horário de chegada no dia. A aba *Valores* é o contrato e o

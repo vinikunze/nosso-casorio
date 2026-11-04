@@ -44,7 +44,25 @@
             <button type="submit" id="auth-submit" class="btn btn-primary btn-block">Entrar</button>
         </form>
 
-        <div class="login-actions">
+        <!-- Aberta pelo link de "Esqueci minha senha" -->
+        <form id="reset-form" class="auth-form" novalidate hidden>
+            <div class="input-group">
+                <label for="reset-password">Nova senha</label>
+                <input type="password" id="reset-password" class="input" placeholder="Mínimo 6 caracteres"
+                    minlength="6" autocomplete="new-password">
+            </div>
+
+            <div class="input-group">
+                <label for="reset-confirm">Repita a nova senha</label>
+                <input type="password" id="reset-confirm" class="input" minlength="6" autocomplete="new-password">
+            </div>
+
+            <p id="reset-feedback" class="auth-feedback" role="status" aria-live="polite"></p>
+
+            <button type="submit" id="reset-submit" class="btn btn-primary btn-block">Salvar nova senha</button>
+        </form>
+
+        <div class="login-actions" id="login-actions">
             <button type="button" id="btn-forgot" class="link-btn">Esqueci minha senha</button>
             <button type="button" id="toggle-auth-mode" class="link-btn">Criar uma conta</button>
         </div>
